@@ -1,0 +1,91 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Python / Conda / virtual env
+.venv/
+venv/
+env/
+ENV/
+conda/
+site-packages/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs and temporary outputs
+logs/
+log/
+runs/
+wandb/
+tensorboard/
+outputs/
+output/
+tmp/
+temp/
+*.log
+
+# Dataset files
+data/
+dataset/
+datasets/
+CMU-MOSI/
+CMU-MOSEI/
+MOSI/
+MOSEI/
+*.csv.large
+*.tsv.large
+
+# Model checkpoints / weights
+checkpoints/
+checkpoint/
+weights/
+pretrained/
+model_weights/
+saved_models/
+*.pt
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+*.onnx
+*.h5
+
+# Large numerical/cache files
+*.npy
+*.npz
+*.pkl
+*.pickle
+*.joblib
+*.mat
+
+# Audio/video raw data
+*.wav
+*.mp3
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flac
+
+# Compressed archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.gz
+
+# Office temporary files
+~$*.docx
+~$*.xlsx
+~$*.pptx

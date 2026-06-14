@@ -1,0 +1,41 @@
+{
+  "args": {
+    "epochs": 4,
+    "batch_size": 24,
+    "lr": 0.0005,
+    "hidden_dim": 256,
+    "dropout": 0.3,
+    "neg_weight": 1.5,
+    "polarity_weight": 0.5,
+    "ema_decay": 0.999,
+    "seeds": [
+      7,
+      1234
+    ],
+    "out_dir": "experiments/v9_roberta_5seed"
+  },
+  "seeds": [
+    7,
+    1234
+  ],
+  "best_val_threshold": 0.36,
+  "val_acc2_nz_at_best_t": 86.23340321453529,
+  "test_raw_t05": {
+    "MAE": 0.5561801195144653,
+    "Corr": 0.7705390506418598,
+    "ACC2": 83.92434988179669,
+    "ACC2_Non0": 86.34361233480176,
+    "F1_Non0": 89.1371003066141,
+    "threshold": 0.5
+  },
+  "test_calibrated": {
+    "MAE": 0.5561801195144653,
+    "Corr": 0.7705390506418598,
+    "ACC2": 84.99892542445734,
+    "ACC2_Non0": 85.49008810572687,
+    "F1_Non0": 89.0047986647194,
+    "threshold": 0.36
+  },
+  "weak_neg_acc": 55.46099290780142,
+  "time_min": 2.695806396007538
+}
