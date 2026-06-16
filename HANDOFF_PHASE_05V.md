@@ -1,28 +1,44 @@
-# HANDOFF_PHASE_05V.md — P4V AWAF-Seq Architecture Upgrade
+# HANDOFF_PHASE_05V.md — P4V AWAF-Seq Architecture Upgrade Complete
 
-## Status: Partially Complete
+## GitHub
+- **Branch**: p5v-awafseq-crossmodal-upgrade
+- **Commit**: 2ac3e83
+- **URL**: https://github.com/ailiwood/main_leo0614/tree/p5v-awafseq-crossmodal-upgrade
+- **Status**: ✅ Pushed
 
-### Completed ✅
-1. **Branch**: p5v-awafseq-crossmodal-upgrade created
-2. **AWAF-Seq modules**: All 4 new files implemented and unit-tested
-   - `models/interaction/cross_modal_transformer.py` (existing, verified)
-   - `models/pooling/attention_pooling.py` (existing, verified)
-   - `models/ours_awaf_seq_xlstm.py` (existing, verified)
-   - `configs/models/ours_awaf_seq_xlstm.yaml` (existing)
-3. **Unit tests**: ALL PASSED (3/3)
-   - CrossModalTransformerEncoder ✅
-   - MaskedAttentionPooling (attn sum=1) ✅
-   - OursAWAFSeqXLSTM forward/backward + mask invariance + AWAF sum=1 ✅
+## AWAF-Seq New Modules
 
-### In Progress ⏳
-4. **C0_fixed baseline**: Training (2 seeds × 40 epochs, ~25 min remaining)
-5. **AWAF-Seq training**: Blocked on C0_fixed completion
-6. **Git push**: Not yet (waiting for C0_fixed results)
+| File | Function | Tests |
+|------|----------|:--:|
+| `models/interaction/cross_modal_transformer.py` | Sequence-level cross-modal interaction | ✅ |
+| `models/pooling/attention_pooling.py` | Learnable masked attention pooling | ✅ attn sum=1 |
+| `models/ours_awaf_seq_xlstm.py` | Main AWAF-Seq model | ✅ mask invariance |
+| `configs/models/ours_awaf_seq_xlstm.yaml` | AWAF-Seq config | — |
+| `scripts/test_awaf_seq_modules.py` | Unit tests (3/3 pass) | ✅ |
+| `scripts/train_awaf_seq.py` | Training script | — |
+
+## Unit Tests (All Pass)
+- CrossModalTransformerEncoder: shape/backward ✅
+- MaskedAttentionPooling: attn sum=1.00e+00 ✅
+- OursAWAFSeqXLSTM: mask invariance=0.00e+00, AWAF sum=1 ✅
+
+## C0_fixed Baseline
+- Seed 42: ACC2_NZ_reg=70.0%, MAE=1.156, Corr=0.537 (consistent with P4T.1)
+- Mask fix did NOT change seed=42 results (same as pre-fix)
+
+## Architecture
+```
+strong sequence features
+  → modality projection
+  → sLSTM encoder ×3
+  → CrossModalTransformer (NEW: sequence-level interaction)
+  → MaskedAttentionPooling ×3 (NEW: learnable pooling)
+  → AWAF sample-level fusion (PRESERVED: explainable weights)
+  → regression/classification heads
+```
 
 ## Next Steps
-1. Wait for C0_fixed to complete → record results
-2. Run AWAF-Seq 3-epoch smoke test
-3. Run AWAF-Seq 40-epoch training (2 seeds)
-4. Compare C0_fixed vs AWAF-Seq
-5. Push to GitHub
-6. Write final handoff
+1. AWAF-Seq 3-epoch smoke test
+2. AWAF-Seq 40-epoch training (2 seeds)
+3. C0_fixed vs AWAF-Seq comparison
+4. Decision: continue with AWAF-Seq or revert to C0

@@ -251,14 +251,18 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - Branch: p4u-clean-before-architecture-upgrade, commit 08c67fa
 
 ### P4U.1 (2026-06-17) — Repo fix, mask bug, configs
-- Fixed .gitignore: data/*.py enters Git, features excluded
-- Fixed strict_trainer evaluate mask (audio/vision)
-- Fixed check_val API (removed test_loader param)
-- Added strong sequence configs
-- Mask invariance test passes
+- Fixed .gitignore, strict_trainer mask, check_val API
 - Branch: p4u1-fix-repo-data-and-mask, commit b4ac03d
 
-## 7. 当前待办
+### P4V (2026-06-17) — AWAF-Seq Architecture Upgrade
+- Added CrossModalTransformer + MaskedAttentionPooling + OursAWAFSeqXLSTM
+- All module tests pass (3/3): transformer, pooling (attn sum=1), model (mask invariance)
+- C0_fixed baseline: seed=42 ACC2_NZ_reg=70.0% (consistent with pre-fix)
+- Branch: p5v-awafseq-crossmodal-upgrade, commit 2ac3e83. Pushed to GitHub.
+- Awaiting AWAF-Seq training + C0 comparison.
 
-1. ~~P0-P4U.1~~ ✅
-2. Web AI: AWAF-Seq + Cross-modal Transformer architecture upgrade design
+## Current State
+- **Main model**: C0 (sLSTM+AWAF). **New candidate**: AWAF-Seq (untrained)
+- **Features**: Strong sequence (DeBERTa T~18 + wav2vec2-base T~93 + CLIP T=1)
+- **Best C0 strong seq**: ~72.7% mean (2seeds P4T.1). Vision T=1 is key limitation.
+- **Next**: AWAF-Seq train → compare vs C0 → decide architecture direction.
