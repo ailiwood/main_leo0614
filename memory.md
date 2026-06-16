@@ -246,13 +246,19 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - P4T: cleanup classified (no deletion), GitHub prep done
 - Strong seq extraction: pipeline ready, models downloading
 
-### P4U (2026-06-17) — Cleanup, Git prep, handoff to Web AI
-- Deleted old V9 code, results, caches, failed experiments
-- All integrity checks passed
-- Repository ready for Web AI review and architecture upgrade
-- Vision T=1 still a bottleneck; need AWAF-Seq + Cross-modal Transformer
+### P4U (2026-06-17) — Cleanup, Git prep
+- Deleted old V9 code, results, caches. All integrity checks passed.
+- Branch: p4u-clean-before-architecture-upgrade, commit 08c67fa
+
+### P4U.1 (2026-06-17) — Repo fix, mask bug, configs
+- Fixed .gitignore: data/*.py enters Git, features excluded
+- Fixed strict_trainer evaluate mask (audio/vision)
+- Fixed check_val API (removed test_loader param)
+- Added strong sequence configs
+- Mask invariance test passes
+- Branch: p4u1-fix-repo-data-and-mask, commit b4ac03d
 
 ## 7. 当前待办
 
-1. ~~P0-P4U~~ ✅
-2. Web AI code review → Architecture upgrade design
+1. ~~P0-P4U.1~~ ✅
+2. Web AI: AWAF-Seq + Cross-modal Transformer architecture upgrade design

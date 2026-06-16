@@ -160,6 +160,30 @@
 - **决策**：当前仓库清理后上传 GitHub，由网页版 AI 审阅
 - **目标**：设计 AWAF-Seq + Cross-modal Transformer 架构升级
 
+### D026：GitHub 必须包含 data/*.py 和 configs/data/*.yaml
+
+- **决策**：.gitignore 不得排除 data/*.py，特征文件通过 data/features*/ 规则排除
+- **修复**：P4U.1 将 `data/` 规则拆分为 data/features*/、data/raw/ 等
+
+### D027：strict_trainer evaluation 必须传入全部三模态 mask
+
+- **决策**：evaluate() 中 text/audio/vision mask 必须全部传入模型 forward
+- **影响**：P4T.1 之前的 eval 结果可能因 audio/vision mask 缺失产生偏差
+
+### D028：C0 strong sequence 旧结果在 mask bug 修复前不作为架构判断最终依据
+
+- **决策**：P4T.1 C0 strong seq 结果（72.7% mean）是在 mask 未完全正确时得到的
+- **影响**：架构判断应基于 mask 修复后的重新评估
+
+### D029：strong sequence 配置固化为 text_dim=1024, audio_dim=768, vision_dim=1024
+
+- **决策**：configs/data/mosi_strong_sequence.yaml + configs/models/ours_c0_strong_sequence.yaml
+
+### D030：P4U.1 只做工程补齐和 bug 修复，不做架构升级
+
+- **决策**：本阶段修复了 .gitignore、evaluate mask、check_val API 和配置固化
+- **影响**：下一步由网页版 AI 基于补齐仓库给出架构升级方案
+
 ### D018：AWAF context 排除自身 + dropout 逐样本
 
 - **决策1**：context attention 默认排除自身模态（q 对 other 2 modals 做 attention）

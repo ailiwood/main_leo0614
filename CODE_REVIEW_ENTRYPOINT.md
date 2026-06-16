@@ -17,6 +17,14 @@
 13. **utils/metrics.py** — unified metrics
 14. **configs/models/ours_c0_best.yaml** — C0 config
 
+## P4U.1 Updates
+
+- **docs/代码工程状态评价文件06170202.md** — Web AI evaluation of repo state (P0 blockers)
+- **data/strong_sequence_dataset.py** — now tracked in Git (was missing due to .gitignore bug)
+- **configs/data/mosi_strong_sequence.yaml** — strong sequence data config
+- **configs/models/ours_c0_strong_sequence.yaml** — C0 on strong sequence model config
+- **engine/strict_trainer.py** — evaluate() now passes audio_mask + vision_mask; check_val() no longer takes test_loader
+
 ## Core Problems to Solve
 
 1. **C0 on strong sequence is still low (~72.7% mean ACC2_NZ_reg)**
