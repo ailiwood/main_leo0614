@@ -1,0 +1,35 @@
+# configs/models/ours_backbone.yaml — 主模型最低主干配置
+# 继承 default.yaml，可按需覆盖
+
+model:
+  text_dim: 1024
+  audio_dim: 1024
+  vision_dim: 1024
+  hidden_dim: 256
+  proj_dropout: 0.1
+
+  # sLSTM 编码器
+  slstm_num_layers: 1        # P2 smoke test 用 1 层
+  slstm_dropout: 0.0
+  slstm_bidirectional: false
+  slstm_pooling: "masked_mean"
+
+  # AWAF 融合 (默认完整的 awaf 模式)
+  awaf_fusion_mode: "awaf"
+  awaf_tau_init: 1.0
+  awaf_dropout: 0.1
+  awaf_modality_dropout: true
+
+  # 预测头
+  head_reg_hidden: 128
+  head_cls_hidden: 128
+  head_dropout: 0.3
+  use_aux_heads: true
+
+training:
+  seed: 42
+  epochs: 1
+  lr: 5.0e-5
+  weight_decay: 0.01
+  batch_size: 32
+  device: "cuda"

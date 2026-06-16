@@ -85,6 +85,16 @@ saved_models/
 *.tar.gz
 *.gz
 
+# HuggingFace cache
+hf_cache/
+.hf_cache/
+
+# Experiments
+experiments/
+
+# External third-party (manage separately)
+external/
+
 # Office temporary files
 ~$*.docx
 ~$*.xlsx

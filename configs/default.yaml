@@ -1,0 +1,64 @@
+# configs/default.yaml — 默认配置
+# 所有路径和超参集中管理，禁止代码中硬编码
+
+# --- 项目路径 ---
+paths:
+  project_root: "E:/00project_code/main_leo/new_code"
+  data_root: "E:/00project_code/main_leo/new_code/data"
+  output_root: "E:/00project_code/main_leo/new_code/outputs"
+
+# --- 数据集 ---
+dataset:
+  name: "mosi"    # mosi | mosei
+  split: "train"  # train | val | test
+  feature_version: "TMDC-v1"
+  batch_size: 32
+  num_workers: 0
+
+# --- 模型 ---
+model:
+  text_dim: 1024
+  audio_dim: 1024
+  vision_dim: 1024
+  hidden_dim: 256
+  proj_dropout: 0.1
+
+  # sLSTM
+  slstm_num_layers: 1
+  slstm_dropout: 0.0
+  slstm_bidirectional: false
+  slstm_pooling: "masked_mean"   # masked_mean | last_valid
+
+  # AWAF
+  awaf_fusion_mode: "awaf"       # awaf | awaf_no_context | awaf_no_interaction | mean | concat | gated | fixed
+  awaf_tau_init: 1.0
+  awaf_dropout: 0.1
+  awaf_modality_dropout: true
+
+  # Heads
+  head_reg_hidden: 128
+  head_cls_hidden: 128
+  head_dropout: 0.3
+  use_aux_heads: true
+
+# --- 训练 ---
+training:
+  seed: 42
+  epochs: 1                     # P2 smoke test: 1
+  lr: 5.0e-5
+  weight_decay: 0.01
+  reg_loss_weight: 1.0
+  cls_loss_weight: 0.5
+  aux_loss_weight: 0.1
+  use_cls_loss: true
+  gradient_clip: 1.0
+  device: "cuda"
+
+# --- 输出 ---
+output:
+  phase: "P2_smoke"
+  timestamp: "auto"             # auto = 自动生成 YYYYMMDD_HHMMSS
+  save_best: true
+  save_last: true
+  save_predictions: true
+  save_awaf_weights: true

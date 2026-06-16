@@ -1,0 +1,166 @@
+# DECISIONS.md — 关键决策记录
+
+> 项目：基于扩展 LSTM 与 Transformer 的跨模态情感分析研究  
+> 用途：记录 CC/Codex 在本轮项目中的关键决策、理由和影响
+
+---
+
+## 2026-06-16 P0：初始扫描阶段决策
+
+### D001：sLSTM 不可复用旧代码，必须自实现
+
+- **决策**：`utils_models/lstm_v.py` 不可复用，sLSTM 必须纯 PyTorch 自实现
+- **理由**：(1) 旧实现是 mLSTM (MatrixLSTM) 而非 sLSTM；(2) 许可证为 AGPL-3.0，不可混入主模型；(3) 接口与三模态时序编码需求不匹配
+- **影响**：P2 需从论文公式从头实现 SLSTMCell + SLSTMEncoder
+- **参考**：Beck et al. (2024) xLSTM paper (NeurIPS)
+
+### D002：AWAF 需完全新建，无可复用代码
+
+- **决策**：AWAF 模块必须完全新建
+- **理由**：当前代码中无任何 AWAF 实现。V9 模型的 GatedFusion 是简单 softmax 门控，不是 AWAF。ours_model.py 的融合方式也完全不同。
+- **影响**：P2 需从配置文件中描述的两段式设计从头实现 AdaptiveWeightedAttentionFusion
+
+### D003：V9 代码路线整体作废，仅保留为参考
+
+- **决策**：当前 `model.py`/`train.py`/`dataset.py` 等 V9 RoBERTa 路线代码不作为新主模型基础
+- **理由**：V9 使用 TransformerEncoder + GatedFusion，不含 sLSTM、AWAF、CME、DEConv 等关键模块
+- **影响**：P2 需重写全部核心代码
+- **保留**：V9 权重和日志保留在 `experiments/` 作为历史记录
+
+### D004：统一指标模块必须重写
+
+- **决策**：`utils_tools/metricsTop.py` 不可作为统一指标实现
+- **理由**：(1) 缺少 ACC2_Non0、F1_Non0、ACC7；(2) Has0_acc_2 混入了 zero label
+- **影响**：P2 需新建 `utils/metrics.py` 为唯一指标实现
+
+### D005：论文初稿 P0 不做深度修改
+
+- **决策**：P0 仅确认论文初稿文件存在且可打开，不深度阅读或修改
+- **理由**：论文实质性修改应在实验完成后的 P9 进行
+- **风险**：初稿（2025-03-18）可能包含旧结论、旧指标、旧架构描述
+
+---
+
+## 2026-06-16 P1：特征链路裁决决策
+
+### D006：TMDC MOSI 特征确认为真实可用
+
+- **决策**：TMDC MOSI 特征（2199样本, DeBERTa+wav2vec+CLIP→1024d）确认为真实提取，100%标签对齐，作为 P2 MOSI smoke test 数据源
+- **理由**：(1) 每个 npy 文件大小不相等（非模拟等大模式）；(2) 标签与官方 label.csv 逐条 100% 对齐；(3) 提取脚本逻辑完整可追溯
+- **影响**：P2 可直接使用 TMDC MOSI 特征启动 smoke test
+
+### D007：放弃所有旧特征链路
+
+- **决策**：simulated MOSI、Tri_modal_ER MOSEI、V9 RoBERTa MOSEI、CASP pkl 全部不采用
+- **理由**：(1) simulated 文件名风险；(2) Tri_modal_ER MOSEI 标签为 0-1 二值非标准回归，特征维度不一致；(3) V9 路线已排除；(4) CASP pkl 在外部不可控路径
+- **影响**：MOSEI 需要自建特征提取链路
+
+### D008：主推 TMDC 自建方案，MLCL 标准特征为补充
+
+- **决策**：特征方案裁决为方案 B（TMDC 自建），方案 A（MLCL 标准特征）作为补充（如可获取）
+- **理由**：(1) TMDC MOSI 已就绪；(2) MLCL 特征可用性无法通过网络确认；(3) 即使 MLCL 特征可用，也可用于 MLCL baseline 而非主模型
+- **影响**：主模型+MOSEI 特征链路需在 P2 期间自建
+
+### D009：推荐 Python 3.10
+
+- **决策**：mme_xlstm 使用 Python 3.10
+- **理由**：(1) PyTorch 2.3.0 对 3.10 支持最成熟；(2) 与 CASP (≥3.8) 兼容；(3) 比 3.11 在 Windows CUDA 上更稳定
+- **影响**：P2 前创建 mme_xlstm (Python 3.10 + PyTorch 2.3.0+cu118)
+
+### D010：MOSEI 视觉特征方案待定
+
+- **决策**：MOSEI 视觉特征提取方案暂不固定，需用户确认视频来源
+- **理由**：当前无 MOSEI 原始视频帧可用
+- **影响**：P2 可能先以 Text+Audio 双模态启动 MOSEI，Vision 补齐后升级为三模态
+
+---
+
+## 2026-06-16 P2：最低主干实现阶段决策
+
+### D011：授权下载并审计 MLCL 仓库/特征
+
+- **决策**：允许下载 MLCL 到 `external/MLCL/`，特征下载到 `external/MLCL_features/`，仅作外部 baseline 资源管理，不混入主模型
+- **引用**：Zhuang et al. (2025), IEEE TMM, 27, 9044–9058, DOI: 10.1109/TMM.2025.3613116
+- **限制**：MLCL 代码和数据不入主模型正式训练，仅用于 P6 baseline 准备
+
+### D012：MOSEI 三模态特征必须完整
+
+- **决策**：MOSEI 视觉特征必须来自原始视频/帧提取或公开预提取真实视觉特征
+- **禁止**：不得用 Text+Audio 双模态冒充三模态正式实验结果
+- **P2 策略**：P2 仅用 MOSI 三模态 smoke test，MOSEI 做资源审计
+
+### D013：创建 mme_xlstm，Python 3.10
+
+- **决策**：P2 前创建 `E:\Anaconda3\envs\mme_xlstm`，Python 3.10 + PyTorch 2.3.0+cu118
+- **原则**：旧 mme 只作对照不污染。P6 MLCL 如需专属环境建 mme_mlcl
+
+### D014：TMDC MOSI vision 按真实情况标注
+
+- **决策**：标注为 "CLIP-ViT-B/32 + fixed random projection to 1024d"，不写 MANet
+- **理由**：manet_UTT 仅为历史目录命名
+
+### D015：clip-level 单向量科学性边界
+
+- **决策**：当前 MOSI TMDC 为 T=1 clip-level smoke test 数据
+- **禁止**：不得将 T=1 smoke test 结果写成 sLSTM 时序建模有效性的论文证据
+- **要求**：dataset 和模型接口兼容未来 [T,D] 序列输入
+
+---
+
+## 2026-06-16 P2.1：质量闸门决策
+
+### D016：PyTorch nightly 为 Blackwell 兼容性临时方案
+
+- **决策**：当前使用 PyTorch 2.12.0.dev20260408+cu128 (nightly)，因 RTX 5070 Ti (Blackwell sm_120) 在 stable PyTorch 2.6.0 预编译二进制中缺少 sm_120 kernel
+- **限制**：torchvision/torchaudio 与 nightly torch 版本不完全匹配，需 import 验证
+- **计划**：P4 正式训练前如 stable 版本已支持 Blackwell，重新评估是否切换
+
+### D017：sLSTM mask padding 状态冻结
+
+- **决策**：padding 时间步的 h/c/n/m 状态必须恢复为上一时刻值
+- **实现**：`SLSTMEncoder._unroll()` 中逐样本替换无效状态
+- **验证**：padding 噪声不影响 pooled（max diff=0.00e+00）
+
+### D019：P4A 结果因 test leakage 不作为论文正式结果
+
+- **决策**：P4A MOSI 75.25% 不可用于论文主表
+- **理由**：best_epoch 由 test ACC2_Non0 选择，inflated ~1.5%
+- **影响**：P4S 修复了 strict protocol，后续结果更可靠
+
+### D020：TMDC-v1 T=1 不作为论文主特征
+
+- **决策**：TMDC-v1 仅作为 pooled baseline / 工程基准
+- **理由**：T=1 不能支撑 sLSTM 时序建模有效性主张
+- **替代**：strong sequence features (DeBERTa token-level + wav2vec2 frame-level)
+
+### D021：MLCL weak sequence 不作为主特征
+
+- **决策**：MLCL standard features (GloVe+COVAREP+FACET) 不采用
+- **理由**：弱特征表现远低于强预训练特征（44.9% vs 75.25%）
+
+### D022：Strong sequence 已构建但 C0 表现不足，需要架构升级
+
+- **决策**：进入 AWAF-Seq + Cross-modal Transformer 架构升级阶段
+- **理由**：C0 strong seq mean=72.7%，低于 T=1 的 75.25%
+- **影响**：需要网页版 AI 审阅代码并设计升级方案
+
+### D023：当前 strong sequence 中 vision 仍为 T=1
+
+- **决策**：暂用 CLIP .pt 单向量，后续需帧级视觉序列
+- **影响**：视觉 T=1 可能是性能瓶颈之一
+
+### D024：旧实验结果和旧代码可删除，保留关键报告和决策记录
+
+- **决策**：执行 P4U 清理，删除旧 V9 代码、旧 outputs、缓存
+- **理由**：用户授权删除，GitHub 上传准备
+- **保留**：reports 总结、HANDOFF、memory、DECISIONS、经验总结、核心代码
+
+### D025：进入 GitHub 上传与网页版 AI 代码审阅阶段
+
+- **决策**：当前仓库清理后上传 GitHub，由网页版 AI 审阅
+- **目标**：设计 AWAF-Seq + Cross-modal Transformer 架构升级
+
+### D018：AWAF context 排除自身 + dropout 逐样本
+
+- **决策1**：context attention 默认排除自身模态（q 对 other 2 modals 做 attention）
+- **决策2**：modality dropout 改为逐样本检查，确保每个样本至少保留一个模态

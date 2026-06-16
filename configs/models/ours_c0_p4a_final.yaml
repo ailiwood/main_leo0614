@@ -1,0 +1,22 @@
+# P4A Final C0 Configuration
+# Adopted: md_prob=0.2 (stronger modality dropout), no entropy regularization
+model:
+  text_dim: 1024; audio_dim: 1024; vision_dim: 1024
+  hidden_dim: 256; proj_dropout: 0.1
+  slstm_num_layers: 1; slstm_dropout: 0.3; slstm_bidirectional: false
+  slstm_pooling: "masked_mean"
+  awaf_fusion_mode: "awaf"; awaf_tau_init: 1.0; awaf_dropout: 0.3
+  awaf_modality_dropout: true
+  head_reg_hidden: 128; head_cls_hidden: 128; head_dropout: 0.3
+  use_aux_heads: false
+  use_deconv: false; use_cme: false; use_data2vec_audio: false
+
+training:
+  seed: 42; epochs: 60; lr: 1.0e-4; weight_decay: 0.01
+  batch_size: 32; device: "cuda"
+  reg_loss_weight: 1.0; cls_loss_weight: 0.5; aux_loss_weight: 0.0
+  modality_dropout_prob: 0.2
+  awaf_entropy_reg_weight: 0.0
+
+# P4A MOSI results (mean of 3 seeds):
+#   ACC2_Non0=75.25%, MAE=1.000, Corr=0.592, ACC7=32.41
