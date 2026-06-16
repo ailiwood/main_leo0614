@@ -1,0 +1,2 @@
+model,seed,best_epoch_by_val,test_ACC2_Non0_regsign,test_F1_Non0_regsign,test_ACC2_Non0_cls,test_F1_Non0_cls,test_MAE,test_Corr,test_ACC7,w_t_mean,w_a_mean,w_v_mean,awaf_entropy_mean,train_time_sec,params,output_dir
+C0_fixed,42,32,69.96951219512195,67.11185308848081,68.14024390243902,65.56836902800659,1.1559942772601115,0.5371449723397825,25.94752186588921,0.4150666296482086,0.1417536437511444,0.443179726600647,0.8033694624900818,863.14608335495,2991366,outputs/P4V_awafseq_upgrade/c0_fixed\seed42
