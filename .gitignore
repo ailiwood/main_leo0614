@@ -34,16 +34,12 @@ tmp/
 temp/
 *.log
 
-# Dataset files
-data/
-dataset/
-datasets/
-CMU-MOSI/
-CMU-MOSEI/
-MOSI/
-MOSEI/
-*.csv.large
-*.tsv.large
+# Dataset FEATURE files (NOT code .py files)
+data/raw/
+data/features*/
+data/features_strong_sequence_mosi/
+data/mosi/
+data/CMU-MOSEI/
 
 # Model checkpoints / weights
 checkpoints/
@@ -92,8 +88,11 @@ hf_cache/
 # Experiments
 experiments/
 
-# External third-party (manage separately)
+# External third-party
 external/
+
+# Archives
+archives/
 
 # Office temporary files
 ~$*.docx

@@ -89,9 +89,11 @@ class StrictTrainer:
         for batch in tqdm(loader,desc='Eval',leave=False):
             txt=self._to_device(batch['text']); aud=batch['audio'].to(self.device)
             vis=batch['vision'].to(self.device); lbl=batch['label'].to(self.device)
-            tm=batch.get('text_mask')
+            tm=batch.get('text_mask'); am=batch.get('audio_mask'); vm=batch.get('vision_mask')
             if isinstance(tm, torch.Tensor): tm=tm.to(self.device)
-            out = self.model(txt,aud,vis,text_mask=tm)
+            if isinstance(am, torch.Tensor): am=am.to(self.device)
+            if isinstance(vm, torch.Tensor): vm=vm.to(self.device)
+            out = self.model(txt,aud,vis,text_mask=tm,audio_mask=am,vision_mask=vm)
             losses = self._compute_loss(out,lbl)
             bs_eval = aud.size(0)
             total_loss+=losses['total'].item()*bs_eval; cnt+=bs_eval
@@ -117,8 +119,9 @@ class StrictTrainer:
                 'metrics_cls':m_cls,'metrics_regsign':m_reg,'awaf_stats':aw_stats,
                 'ids':all_ids,'loss':avg_l}
 
-    def check_val(self, epoch, val_loader, test_loader):
-        """Evaluate on val, update best checkpoint, return val metrics."""
+    def check_val(self, epoch, val_loader):
+        """Evaluate on val ONLY. test_loader must NOT be used here.
+        Updates best checkpoint based on val MAE."""
         val_r = self.evaluate(val_loader)
         val_mae = val_r['metrics_regsign']['MAE']
         record = {'epoch':epoch,'val_loss':val_r['loss'],
