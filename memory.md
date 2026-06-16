@@ -254,15 +254,17 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - Fixed .gitignore, strict_trainer mask, check_val API
 - Branch: p4u1-fix-repo-data-and-mask, commit b4ac03d
 
-### P4V (2026-06-17) — AWAF-Seq Architecture Upgrade
-- Added CrossModalTransformer + MaskedAttentionPooling + OursAWAFSeqXLSTM
-- All module tests pass (3/3): transformer, pooling (attn sum=1), model (mask invariance)
-- C0_fixed baseline: seed=42 ACC2_NZ_reg=70.0% (consistent with pre-fix)
-- Branch: p5v-awafseq-crossmodal-upgrade, commit 2ac3e83. Pushed to GitHub.
-- Awaiting AWAF-Seq training + C0 comparison.
+### P4V (2026-06-17) — AWAF-Seq Architecture
+- AWAF-Seq modules: CrossModalTransformer + MaskedAttentionPooling + OursAWAFSeqXLSTM
+- All tests pass (3/3). Branch: p5v-awafseq-crossmodal-upgrade, commit 73f984a.
+
+### P4V.1 (2026-06-17) — AWAF-Seq Training Probe
+- Resource: BS 16-128 all OK (max 937MB @ BS128). BS=32 selected.
+- **AWAF-Seq BS=32 20ep: ACC2_NZ_reg=73.0%, MAE=1.092, Corr=0.603** (best 20ep yet!)
+- C0_fixed seed=42: 70.0% (confirm P4T.1). Branch: p4v1-awafseq-training-probe, commit 436e017.
+- AWAF-Seq 40ep + C0 seed=2024: in progress.
 
 ## Current State
-- **Main model**: C0 (sLSTM+AWAF). **New candidate**: AWAF-Seq (untrained)
-- **Features**: Strong sequence (DeBERTa T~18 + wav2vec2-base T~93 + CLIP T=1)
-- **Best C0 strong seq**: ~72.7% mean (2seeds P4T.1). Vision T=1 is key limitation.
-- **Next**: AWAF-Seq train → compare vs C0 → decide architecture direction.
+- **C0**: ~72.7% mean (2seeds). **AWAF-Seq**: 73.0% at 20ep (seed=42 only).
+- AWAF-Seq shows early promise — faster convergence than C0 at same epoch.
+- Vision T=1 remains key limitation.
