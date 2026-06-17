@@ -269,3 +269,28 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - MOSEI: Grade C→B, NO MP4 available (CMU YouTube privacy)
 - Old MOSEI .features deleted (1.26GB unreliable). SDK .csd is standard approach.
 - Branch: p4y-data-redownload-audit, commit d0f2b04 ✅
+
+### P5A (2026-06-17) — Text-Guided AWAF-xLSTM (FAILED)
+- ACC2_NZ_reg=75.5%, MAE=1.053, Corr=0.611 — worse than P4W 78.8%
+- Text-guided mechanism broke audio/vision independent sLSTM modeling
+- Still inherited text-sLSTM from old route → unavoidable degradation
+
+### P5B (2026-06-17) — Strong Feature Upper Bound Diagnosis (BREAKTHROUGH)
+- Text+sLSTM=76.2% vs DeepMLP text-only=80.2%: sLSTM on text is COUNTERPRODUCTIVE
+- DeepMLP text-only (592K params) BEATS Full AWAF-Seq (4.15M params): 80.2% > 78.8%
+- Multimodal fusion currently HURTS, not helps
+- Root cause: DeBERTa tokens already contextualized → sLSTM adds noise
+- HANDOFF_PHASE_10B.md documents the breakthrough
+
+### P5C (2026-06-17) — DeepText-xLSTM-AWAF Residual Refactor ✅
+- **D031**: Architecture overhaul — main model redesigned as DeepText-xLSTM-AWAF Residual
+- **Unit tests**: 9/9 passed (MOSI dims, MOSEI SDK dims, AWAF sum=1, padding, ablations, delta_scale, loss)
+- **3ep smoke**: ACC2=75.00% (trending up strongly)
+- **Seed42 60ep**: **ACC2_NZ_reg=81.10%, MAE=0.8155, Corr=0.7487** ✅
+  - Beats DeepMLP text-only (80.2%) by +0.9% — residual fusion VALIDATED
+  - Beats P4W AWAF-Seq (78.8%) by +2.3%
+  - Best val ACC2=84.26% at epoch 51
+  - AWAF weights: w_t=0.18, w_a=0.44, w_v=0.39 — audio dominates residual
+- **Decision**: Model validated. Recommend seed=2024 confirmation. Model NOT frozen.
+- Branch: p5c-deeptext-xlstm-awaf-residual-refactor
+- Commit: (pending)

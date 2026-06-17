@@ -24,13 +24,14 @@ class StrictTrainer:
     def __init__(self, model, device='cuda', lr=5e-5, weight_decay=0.01,
                  reg_loss_weight=1.0, cls_loss_weight=0.5, aux_loss_weight=0.0,
                  awaf_entropy_reg_weight=0.0, sign_consistency_weight=0.0,
-                 use_amp=False, eps=1e-8):
+                 delta_reg_weight=0.0, use_amp=False, eps=1e-8):
         self.model = model.to(device)
         self.device = device; self.lr = lr; self.weight_decay = weight_decay
         self.reg_loss_weight = reg_loss_weight; self.cls_loss_weight = cls_loss_weight
         self.aux_loss_weight = aux_loss_weight
         self.awaf_entropy_reg_weight = awaf_entropy_reg_weight
         self.sign_consistency_weight = sign_consistency_weight
+        self.delta_reg_weight = delta_reg_weight
         self.use_amp = use_amp; self.eps = eps
         self.l1 = nn.L1Loss(); self.bce = nn.BCEWithLogitsLoss()
         self.opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
@@ -66,8 +67,13 @@ class StrictTrainer:
             sign_target = (labels >= 0).float().view(-1)
             sign_logit = 2.0 * output['reg'].view(-1)  # scale factor for sigmoid steepness
             sc = self.bce(sign_logit, sign_target)
-        total = self.reg_loss_weight*rl + self.cls_loss_weight*cl + self.aux_loss_weight*al + er + self.sign_consistency_weight*sc
-        return {'total':total,'reg':rl,'cls':cl,'aux':al,'entropy_reg':er,'sign_consistency':sc}
+        # Delta regularization (P5C): encourage small residual correction
+        dr = torch.tensor(0.,device=self.device)
+        delta_reg = output.get('delta_reg')
+        if delta_reg is not None and self.delta_reg_weight > 0:
+            dr = delta_reg.abs().mean()
+        total = self.reg_loss_weight*rl + self.cls_loss_weight*cl + self.aux_loss_weight*al + er + self.sign_consistency_weight*sc + self.delta_reg_weight*dr
+        return {'total':total,'reg':rl,'cls':cl,'aux':al,'entropy_reg':er,'sign_consistency':sc,'delta_reg':dr}
 
     def _to_device(self, x):
         if isinstance(x, torch.Tensor): return x.to(self.device)

@@ -188,3 +188,17 @@
 
 - **决策1**：context attention 默认排除自身模态（q 对 other 2 modals 做 attention）
 - **决策2**：modality dropout 改为逐样本检查，确保每个样本至少保留一个模态
+
+---
+
+## 2026-06-17 P5C：主模型大修决策
+
+### D031：主模型大修 — DeepText-xLSTM-AWAF Residual
+
+- **决策**：从"三路 sLSTM 平权融合 + AWAF"切换为"DeepText 主判别 + xLSTM 残差增强 + AWAF 残差修正"
+- **理由**：(1) P5B 证明 text-side sLSTM 为因果反作用（76.2% → 80.2%）；(2) DeepMLP text-only (80.2%) 已超过旧多模态模型 (78.8%)；(3) 多模态融合当前对性能有害而非有益
+- **新架构**：Text=DeepMLP(no sLSTM), Audio/Vision=sLSTM, AWAF=residual correction generator, Final=text_base + λ*delta
+- **影响**：P5C 全部代码按新架构重写；消融项重新定义；论文第3/4/5章方法描述需相应修改
+- **xLSTM 位置**：仅用于 audio/vision 时序残差增强
+- **AWAF 位置**：残差修正权重生成器
+- **详细文档**：`docs/主模型大修决策06171310.md`
