@@ -55,6 +55,8 @@ saved_models/
 *.safetensors
 *.onnx
 *.h5
+*.hdf5
+*.csd
 
 # Large numerical/cache files
 *.npy

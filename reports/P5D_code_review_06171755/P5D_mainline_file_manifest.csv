@@ -1,0 +1,32 @@
+path,file_type,role,keep_mainline_yes_no,review_required_yes_no,notes
+models/deeptext_xlstm_awaf_residual.py,model,Main model class DeepTextXLSTMAWAFResidual,yes,yes,P5C/D main architecture
+models/encoders/slstm.py,model,sLSTM encoder (audio/vision only),yes,yes,Core temporal encoding
+models/fusion/awaf.py,model,AWAF adaptive weighted attention fusion,yes,yes,Core innovation module
+models/heads.py,model,Prediction heads (reg/cls/aux),yes,yes,Shared prediction modules
+models/pooling/attention_pooling.py,model,Masked attention pooling,yes,yes,Used in all branches
+models/interaction/cross_modal_transformer.py,model,Cross-modal transformer encoder,yes,no,Optional module not currently used
+models/modules/conditional_residual_gate.py,model,Conditional residual gate (P5D),yes,yes,Implemented but not yet trained
+engine/losses.py,engine,ResidualLossComputer + sample reweight,yes,yes,All loss functions
+engine/strict_trainer.py,engine,Strict protocol trainer,yes,yes,Training/eval/save pipeline
+utils/metrics.py,utils,Unified metrics (ACC2_Non0/Has0/MAE/Corr/ACC7),yes,yes,Sole metrics implementation
+utils/seed.py,utils,Random seed control,yes,no,Utility
+data/strong_sequence_dataset.py,data,Strong sequence data loading,yes,yes,MOSI v3_T40 dataset
+scripts/train_deeptext_xlstm_awaf_residual.py,script,One-stage training entry,yes,yes,Main training script
+scripts/train_deeptext_xlstm_awaf_residual_twostage.py,script,Two-stage training entry,yes,yes,Stage1 text pretrain + Stage2 residual + Stage3 joint
+scripts/test_deeptext_xlstm_awaf_residual.py,script,Unit tests (9/9),yes,yes,Model validation
+scripts/analyze_residual_effect.py,script,Residual effect analysis,yes,no,Diagnostic tool
+configs/models/deeptext_xlstm_awaf_residual_mosi.yaml,config,MOSI main config,yes,yes,Default training config
+configs/models/deeptext_xlstm_awaf_residual_mosei_sdk.yaml,config,MOSEI SDK dims config,yes,no,Dims compatibility only
+configs/data/mosi_strong_sequence.yaml,config,MOSI strong sequence data config,yes,yes,Data paths
+configs/default.yaml,config,Default base config,yes,no,Base config
+docs/主模型大修决策06171310.md,docs,Architecture overhaul decision D031,yes,yes,Critical decision document
+docs/FINAL_MODEL_SPEC_DRAFT.md,docs,Final model spec draft,yes,yes,Model specification
+docs/DECISIONS.md,docs,All key decisions D001-D038,yes,yes,Decision log
+memory.md,memory,Project memory and phase history,yes,yes,Complete project state
+CODE_REVIEW_ENTRYPOINT.md,readme,Code review entry point,yes,yes,Quick overview for Web AI
+HANDOFF_PHASE_11C.md,handoff,P5C handoff,yes,no,Historical
+HANDOFF_PHASE_12D.md,handoff,P5D handoff,yes,yes,Latest handoff
+reports/P5D_residual_sprint/P5D_seed2024_result.md,report,Seed2024 training result,yes,yes,Key results
+reports/P5D_residual_sprint/P5D_2seed_summary.csv,report,2-seed summary table,yes,yes,Key results
+reports/P5D_residual_sprint/P5D_residual_effect_analysis.md,report,Residual effect breakdown,yes,yes,Diagnostic
+reports/P5D_residual_sprint/P5D_stage_decision.md,report,P5D stage decision,yes,yes,Progress status
