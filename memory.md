@@ -260,9 +260,11 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 
 ### P4V.1 (2026-06-17) — AWAF-Seq 73.9%. Branch: p4v1-awafseq-training-probe.
 
-### P4W (2026-06-17) — MOSI Performance Breakthrough
-- **Vision T>1 extracted: 2199/2199, T=20, 10.3min, CLIP-ViT per-frame**
-- **AWAF-Seq + Vision T>1: 78.4% mean (+4.5% from P4V.1, +5.7% from C0)**
-- Seed 42: 78.8% MAE=0.994 Corr=0.645. Seed 2024: 78.0% MAE=0.965 Corr=0.687
-- MAE sub-1.0 for first time! Simpler=best (HD=256, CL=2, BS=32)
-- Branch: p4w-mosi-awafseq-performance, commit 05c0ad5 ✅
+### P4W (2026-06-17) — MOSI 78.4%. Branch: p4w-mosi-awafseq-performance.
+
+### P4X (2026-06-17) — MOSI final + MOSEI prep
+- P4W results confirmed: 78.4% best MOSI result
+- MOSEI: text+audio available, vision BLOCKED (no MP4)
+- Branch: p4x-mosi-vision-mosei-prep, commit 7151b28
+- Vision T=32/40 + component ablation in progress
+- HANDOFF_PHASE_07X.md ready for Web AI review
