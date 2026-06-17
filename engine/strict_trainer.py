@@ -23,17 +23,24 @@ from models.fusion.awaf import save_awaf_weights_csv
 class StrictTrainer:
     def __init__(self, model, device='cuda', lr=5e-5, weight_decay=0.01,
                  reg_loss_weight=1.0, cls_loss_weight=0.5, aux_loss_weight=0.0,
-                 awaf_entropy_reg_weight=0.0, eps=1e-8):
+                 awaf_entropy_reg_weight=0.0, sign_consistency_weight=0.0,
+                 use_amp=False, eps=1e-8):
         self.model = model.to(device)
         self.device = device; self.lr = lr; self.weight_decay = weight_decay
         self.reg_loss_weight = reg_loss_weight; self.cls_loss_weight = cls_loss_weight
         self.aux_loss_weight = aux_loss_weight
-        self.awaf_entropy_reg_weight = awaf_entropy_reg_weight; self.eps = eps
+        self.awaf_entropy_reg_weight = awaf_entropy_reg_weight
+        self.sign_consistency_weight = sign_consistency_weight
+        self.use_amp = use_amp; self.eps = eps
         self.l1 = nn.L1Loss(); self.bce = nn.BCEWithLogitsLoss()
         self.opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+        self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            self.opt, mode='min', factor=0.5, patience=8, verbose=False)
+        self.scaler = torch.amp.GradScaler('cuda') if use_amp else None
         self.val_history: List[Dict] = []
         self.best_val_mae = float('inf'); self.best_epoch = 0
         self.best_state = None
+        self.current_lr = lr
 
     def _compute_loss(self, output, labels):
         labels = labels.view(-1,1).float().to(self.device)
@@ -53,8 +60,14 @@ class StrictTrainer:
             wc = w.clamp(self.eps)
             ent = -(wc*torch.log(wc)).sum(-1).mean()
             er = -self.awaf_entropy_reg_weight * ent
-        total = self.reg_loss_weight*rl + self.cls_loss_weight*cl + self.aux_loss_weight*al + er
-        return {'total':total,'reg':rl,'cls':cl,'aux':al,'entropy_reg':er}
+        # Sign consistency: encourage reg_pred sign to match label sign
+        sc = torch.tensor(0.,device=self.device)
+        if self.sign_consistency_weight > 0:
+            sign_target = (labels >= 0).float().view(-1)
+            sign_logit = 2.0 * output['reg'].view(-1)  # scale factor for sigmoid steepness
+            sc = self.bce(sign_logit, sign_target)
+        total = self.reg_loss_weight*rl + self.cls_loss_weight*cl + self.aux_loss_weight*al + er + self.sign_consistency_weight*sc
+        return {'total':total,'reg':rl,'cls':cl,'aux':al,'entropy_reg':er,'sign_consistency':sc}
 
     def _to_device(self, x):
         if isinstance(x, torch.Tensor): return x.to(self.device)
@@ -75,9 +88,16 @@ class StrictTrainer:
             losses = self._compute_loss(out,lbl)
             loss = losses['total']
             if torch.isnan(loss): continue
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.model.parameters(),1.0)
-            self.opt.step()
+            if self.scaler is not None:
+                self.scaler.scale(loss).backward()
+                self.scaler.unscale_(self.opt)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(),1.0)
+                self.scaler.step(self.opt)
+                self.scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(),1.0)
+                self.opt.step()
             bs = aud.size(0)
             total+=loss.item()*bs; cnt+=bs
         return total/cnt if cnt>0 else float('nan')
@@ -133,6 +153,8 @@ class StrictTrainer:
             self.best_val_mae = val_mae
             self.best_epoch = epoch
             self.best_state = {k:v.detach().clone().cpu() for k,v in self.model.state_dict().items()}
+        self.scheduler.step(val_mae)
+        self.current_lr = self.opt.param_groups[0]['lr']
         return val_r, record
 
     def final_test(self, test_loader):
