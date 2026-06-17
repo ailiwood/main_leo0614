@@ -285,12 +285,19 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 ### P5C (2026-06-17) — DeepText-xLSTM-AWAF Residual Refactor ✅
 - **D031**: Architecture overhaul — main model redesigned as DeepText-xLSTM-AWAF Residual
 - **Unit tests**: 9/9 passed (MOSI dims, MOSEI SDK dims, AWAF sum=1, padding, ablations, delta_scale, loss)
-- **3ep smoke**: ACC2=75.00% (trending up strongly)
-- **Seed42 60ep**: **ACC2_NZ_reg=81.10%, MAE=0.8155, Corr=0.7487** ✅
-  - Beats DeepMLP text-only (80.2%) by +0.9% — residual fusion VALIDATED
-  - Beats P4W AWAF-Seq (78.8%) by +2.3%
-  - Best val ACC2=84.26% at epoch 51
-  - AWAF weights: w_t=0.18, w_a=0.44, w_v=0.39 — audio dominates residual
-- **Decision**: Model validated. Recommend seed=2024 confirmation. Model NOT frozen.
-- Branch: p5c-deeptext-xlstm-awaf-residual-refactor
-- Commit: (pending)
+- **Seed42 60ep**: ACC2_NZ_reg=81.10%, MAE=0.8155, Corr=0.7487
+- **Seed2024 60ep**: ACC2_NZ_reg=81.40%, MAE=0.7957, Corr=0.7490
+- **2-seed mean**: ACC2=81.25%, stable (σ=0.15%) ✅
+- Branch: p5c-deeptext-xlstm-awaf-residual-refactor, commit 19d6e6c
+
+### P5D (2026-06-17) — Residual Stability & Performance Sprint (IN PROGRESS)
+- **D032-D038**: P5D decisions recorded
+- **Stability**: 2-seed mean 81.25% confirms residual architecture is stable
+- **Residual analysis**: weak_neg most improved (+1.3% sign), overall effect subtle but positive
+- **ConditionalResidualGate**: Implemented (75K params, 8/8 tests), not yet trained
+- **Sample reweight**: Implemented in losses.py (weak_neg/near_zero/focal)
+- **Two-stage trainer**: Script ready, not yet run
+- **Not yet run**: Diagnostic ablation, Gate training, Two-stage, Weak_neg reweight
+- **Not frozen**: Need to run remaining sprint experiments
+- **MOSEI**: Still blocked, dimensions compatible
+- Branch: p5d-residual-stability-performance-sprint, commit: pending

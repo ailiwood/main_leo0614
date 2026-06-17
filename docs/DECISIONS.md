@@ -202,3 +202,43 @@
 - **xLSTM 位置**：仅用于 audio/vision 时序残差增强
 - **AWAF 位置**：残差修正权重生成器
 - **详细文档**：`docs/主模型大修决策06171310.md`
+
+---
+
+## 2026-06-17 P5D：残差稳定性验证与性能冲刺
+
+### D032：P5C 路线验证成功但性能不达标
+
+- **决策**：P5C DeepText-xLSTM-AWAF Residual 路线验证通过（2-seed mean 81.25%），但不能冻结模型
+- **理由**：81.25% 虽超过 text-only 80.2%，但距离论文要求的 83%+ 仍有差距
+- **影响**：需要 P5D 性能冲刺（ConditionalGate, Two-stage, Reweight）
+
+### D033：P5D 先补 seed=2024，再进入性能冲刺
+
+- **决策**：seed=2024 补跑确认稳定性（81.40%，σ=0.15%），然后进入性能冲刺
+- **理由**：2-seed mean 81.25% ≥ 81.0%，进入冲刺阶段；< 82.5%，不补 3rd seed
+
+### D034：探索阶段默认不保留 last/epoch checkpoints
+
+- **决策**：P5D 起默认只保存 best_model.pth 一份，不保存 last_model.pth
+- **理由**：当前 34 个 pth 文件占用 537MB，大多数是探索阶段遗留
+
+### D035：ConditionalResidualGate 用于避免 residual 无条件破坏强文本预测
+
+- **决策**：实现 ConditionalResidualGate，让 residual 在文本高置信度时自动降低修正幅度
+- **理由**：Residual analysis 显示 strong_neg 有 53.3% 被破坏（残差过度修正）
+
+### D036：Two-stage training 用于减少 text branch 与 residual branch 干扰
+
+- **决策**：实现两阶段训练（Stage1: text-only, Stage2: residual, Stage3: optional joint）
+- **理由**：当前 joint training 可能导致 text base 和 residual 相互干扰
+
+### D037：weak_neg reweight 针对弱负样本瓶颈
+
+- **决策**：在 losses.py 中实现 sample reweight 和 focal sign loss
+- **理由**：Residual analysis 发现 weak_neg 是改进最大群组（+1.3% sign），值得针对性优化
+
+### D038：P5D 仍不进入 MOSEI 正式训练
+
+- **决策**：MOSEI 保持维度兼容状态，不启动正式训练
+- **理由**：MMSDK 安装仍 blocked，且主模型尚未冻结

@@ -16,7 +16,8 @@ P5C 新架构 (D031):
   2. xLSTM 仅用于 audio / vision 时序残差增强
   3. AWAF 负责样本级 residual correction 权重
   4. Final = text_base + λ * residual_correction
-  5. δ_scale_init = 0.1，可学习
+  P5D 新增:
+  - ConditionalResidualGate: g(x) * λ * delta (条件残差修正)
 
 Ablation 支持:
   - no_residual:           仅 text branch (baseline)
@@ -36,6 +37,7 @@ from models.encoders.slstm import SLSTMEncoder
 from models.fusion.awaf import AdaptiveWeightedAttentionFusion
 from models.pooling.attention_pooling import MaskedAttentionPooling
 from models.heads import RegressionHead, ClassificationHead, UnimodalHeads
+from models.modules.conditional_residual_gate import ConditionalResidualGate
 
 
 class DeepTextXLSTMAWAFResidual(nn.Module):
@@ -83,6 +85,14 @@ class DeepTextXLSTMAWAFResidual(nn.Module):
         ablation: str = 'none',  # 'none'|'no_residual'|'no_audio'|'no_vision'|'no_awaf_mean_residual'|'text_slstm_on'
         # --- Aux ---
         use_aux_heads: bool = False,
+        # --- P5D: Conditional Residual Gate ---
+        use_residual_gate: bool = False,
+        gate_hidden_dim: int = 128,
+        gate_dropout: float = 0.1,
+        gate_init_bias: float = -1.0,
+        gate_use_text_confidence: bool = True,
+        gate_use_awaf_entropy: bool = True,
+        gate_use_delta_magnitude: bool = True,
         # --- Misc ---
         eps: float = 1e-8,
     ):
@@ -225,7 +235,18 @@ class DeepTextXLSTMAWAFResidual(nn.Module):
         # ============================================================
         # 6. Auxiliary Heads (可选)
         # ============================================================
+        self.use_residual_gate = use_residual_gate
         self.use_aux_heads = use_aux_heads
+        if use_residual_gate:
+            self.residual_gate = ConditionalResidualGate(
+                hidden_dim=hidden_dim,
+                gate_hidden_dim=gate_hidden_dim,
+                dropout=gate_dropout,
+                init_bias=gate_init_bias,
+                use_text_confidence=gate_use_text_confidence,
+                use_awaf_entropy=gate_use_awaf_entropy,
+                use_delta_magnitude=gate_use_delta_magnitude,
+            )
         if use_aux_heads:
             self.aux_heads = UnimodalHeads(
                 in_dim=hidden_dim,
@@ -393,9 +414,27 @@ class DeepTextXLSTMAWAFResidual(nn.Module):
             delta_reg = self.delta_reg_head(z_residual)     # [B, 1]
             delta_cls = self.delta_cls_head(z_residual)     # [B, 1]
 
-            # Residual correction
-            reg = reg_text_base + self.delta_scale_reg * delta_reg
-            cls = cls_text_base + self.delta_scale_cls * delta_cls
+            # P5D: Conditional Residual Gate
+            residual_gate_reg = None
+            residual_gate_cls = None
+            if self.use_residual_gate and self.ablation != 'no_residual':
+                gate_out = self.residual_gate(
+                    h_text_base=h_text_base,
+                    z_residual=z_residual,
+                    reg_text_base=reg_text_base,
+                    cls_text_base=cls_text_base,
+                    awaf_weights=awaf_weights,
+                    delta_reg=delta_reg,
+                )
+                residual_gate_reg = gate_out['gate_reg']  # [B, 1]
+                residual_gate_cls = gate_out['gate_cls']  # [B, 1]
+                # Conditional residual correction
+                reg = reg_text_base + residual_gate_reg * self.delta_scale_reg * delta_reg
+                cls = cls_text_base + residual_gate_cls * self.delta_scale_cls * delta_cls
+            else:
+                # Original residual correction (unconditional)
+                reg = reg_text_base + self.delta_scale_reg * delta_reg
+                cls = cls_text_base + self.delta_scale_cls * delta_cls
 
         # --- 6. Auxiliary Heads ---
         aux = {}
@@ -424,6 +463,11 @@ class DeepTextXLSTMAWAFResidual(nn.Module):
             'delta_scale_reg': self.delta_scale_reg,
             'delta_scale_cls': self.delta_scale_cls,
         }
+        # P5D: Conditional Residual Gate outputs
+        if residual_gate_reg is not None:
+            result['residual_gate_reg'] = residual_gate_reg
+        if residual_gate_cls is not None:
+            result['residual_gate_cls'] = residual_gate_cls
 
         if return_all:
             result.update({

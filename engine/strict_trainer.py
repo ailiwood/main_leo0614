@@ -111,6 +111,8 @@ class StrictTrainer:
     @torch.no_grad()
     def evaluate(self, loader):
         self.model.eval(); all_reg,all_cls,all_lbl,all_w=[],[],[],[]
+        all_reg_base,all_delta_reg,all_cls_base,all_delta_cls=[],[],[],[]
+        all_gate_reg,all_gate_cls=[],[]
         total_loss=0.0; cnt=0; all_ids=[]
         for batch in tqdm(loader,desc='Eval',leave=False):
             txt=self._to_device(batch['text']); aud=batch['audio'].to(self.device)
@@ -125,6 +127,18 @@ class StrictTrainer:
             total_loss+=losses['total'].item()*bs_eval; cnt+=bs_eval
             all_reg.append(out['reg'].cpu()); all_cls.append(out['cls'].cpu())
             all_lbl.append(lbl.cpu()); all_w.append(out['awaf_weights'].cpu())
+            # P5D: collect text_base and delta for residual analysis
+            if out.get('reg_text_base') is not None:
+                all_reg_base.append(out['reg_text_base'].cpu())
+                all_delta_reg.append(out['delta_reg'].cpu())
+            if out.get('cls_text_base') is not None:
+                all_cls_base.append(out['cls_text_base'].cpu())
+                all_delta_cls.append(out['delta_cls'].cpu())
+            # P5D: collect residual gates if present
+            if out.get('residual_gate_reg') is not None:
+                all_gate_reg.append(out['residual_gate_reg'].cpu())
+            if out.get('residual_gate_cls') is not None:
+                all_gate_cls.append(out['residual_gate_cls'].cpu())
             ids = batch.get('id',[str(i) for i in range(len(lbl))]); all_ids.extend(ids)
         rp=torch.cat(all_reg); cp=torch.cat(all_cls); tg=torch.cat(all_lbl)
         aw=torch.cat(all_w); avg_l=total_loss/cnt if cnt>0 else float('nan')
@@ -141,9 +155,21 @@ class StrictTrainer:
             'collapse_ratio_0.8':float((aw[:,0]>0.8).float().mean()),
             'collapse_ratio_0.9':float((aw[:,0]>0.9).float().mean()),
         }
-        return {'reg_preds':rp,'cls_preds':cp,'targets':tg,'awaf_weights':aw,
+        result = {'reg_preds':rp,'cls_preds':cp,'targets':tg,'awaf_weights':aw,
                 'metrics_cls':m_cls,'metrics_regsign':m_reg,'awaf_stats':aw_stats,
                 'ids':all_ids,'loss':avg_l}
+        # P5D: include text_base and delta for residual analysis
+        if all_reg_base:
+            result['reg_text_base'] = torch.cat(all_reg_base)
+            result['delta_reg'] = torch.cat(all_delta_reg)
+        if all_cls_base:
+            result['cls_text_base'] = torch.cat(all_cls_base)
+            result['delta_cls'] = torch.cat(all_delta_cls)
+        if all_gate_reg:
+            result['residual_gate_reg'] = torch.cat(all_gate_reg)
+        if all_gate_cls:
+            result['residual_gate_cls'] = torch.cat(all_gate_cls)
+        return result
 
     def check_val(self, epoch, val_loader):
         """Evaluate on val ONLY. test_loader must NOT be used here.
@@ -188,7 +214,7 @@ class StrictTrainer:
         ax.set_xlabel('Epoch'); ax.legend(); ax.grid(True,alpha=0.3)
         fig.savefig(os.path.join(out_dir,'val_curves.png'),dpi=150); plt.close(fig)
 
-    def save_run(self, out_dir, config, cmd, epoch, test_result):
+    def save_run(self, out_dir, config, cmd, epoch, test_result, save_last_pth=False):
         os.makedirs(out_dir,exist_ok=True)
         with open(os.path.join(out_dir,'config.json'),'w') as f: json.dump(config,f,indent=2)
         with open(os.path.join(out_dir,'command.txt'),'w') as f: f.write(cmd)
@@ -211,8 +237,30 @@ class StrictTrainer:
             tg=m['targets'].numpy().flatten(); ids=m.get('ids',range(len(rp)))
             for i in range(len(rp)): w.writerow([ids[i] if i<len(ids) else i,rp[i],cp[i],tg[i]])
         save_awaf_weights_csv(m['awaf_weights'],m.get('ids',[]),os.path.join(out_dir,'awaf_weights_test.csv'))
+        # P5D: text_base_delta_test.csv for residual analysis
+        fieldnames = ['sample_id','label','reg_text_base','delta_reg','delta_scale_reg','reg_final',
+                      'cls_text_base','delta_cls','delta_scale_cls','cls_final',
+                      'awaf_w_t','awaf_w_a','awaf_w_v']
+        if m.get('residual_gate_reg') is not None:
+            fieldnames.extend(['residual_gate_reg','residual_gate_cls'])
+        with open(os.path.join(out_dir,'text_base_delta_test.csv'),'w',newline='') as f:
+            w=csv.writer(f); w.writerow(fieldnames)
+            for i in range(len(rp)):
+                row = [ids[i] if i<len(ids) else i, tg[i],
+                       m.get('reg_text_base',rp)[i].item() if m.get('reg_text_base') is not None else '',
+                       m.get('delta_reg',rp)[i].item() if m.get('delta_reg') is not None else '',
+                       '', rp[i],
+                       m.get('cls_text_base',cp)[i].item() if m.get('cls_text_base') is not None else '',
+                       m.get('delta_cls',cp)[i].item() if m.get('delta_cls') is not None else '',
+                       '', cp[i],
+                       m['awaf_weights'][i,0].item(), m['awaf_weights'][i,1].item(), m['awaf_weights'][i,2].item()]
+                if m.get('residual_gate_reg') is not None:
+                    row.append(m['residual_gate_reg'][i].item())
+                    row.append(m['residual_gate_cls'][i].item())
+                w.writerow(row)
         torch.save({'epoch':epoch,'model_state_dict':self.best_state or self.model.state_dict(),
                     'best_val_mae':self.best_val_mae,'best_epoch':self.best_epoch,
                     'test_metrics':test_metrics},os.path.join(out_dir,'best_model.pth'))
-        torch.save({'epoch':epoch,'model_state_dict':self.model.state_dict()},os.path.join(out_dir,'last_model.pth'))
+        if save_last_pth:
+            torch.save({'epoch':epoch,'model_state_dict':self.model.state_dict()},os.path.join(out_dir,'last_model.pth'))
         self.plot_val_curves(out_dir)

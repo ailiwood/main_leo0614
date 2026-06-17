@@ -44,6 +44,16 @@ class ResidualLossComputer:
         awaf_entropy_reg_weight: float = 0.0,
         # Loss types
         reg_loss_type: str = 'l1',  # 'l1' | 'smooth_l1'
+        # P5D: Sample reweight
+        sample_reweight_enabled: bool = False,
+        weak_neg_weight: float = 1.5,
+        weak_pos_weight: float = 1.2,
+        near_zero_weight: float = 1.2,
+        strong_sample_weight: float = 1.0,
+        # P5D: Focal sign loss
+        sign_focal_enabled: bool = False,
+        sign_focal_gamma: float = 2.0,
+        sign_focal_alpha_neg: float = 1.2,
         eps: float = 1e-8,
     ):
         self.reg_loss_weight = reg_loss_weight
@@ -52,6 +62,14 @@ class ResidualLossComputer:
         self.aux_loss_weight = aux_loss_weight
         self.delta_reg_weight = delta_reg_weight
         self.awaf_entropy_reg_weight = awaf_entropy_reg_weight
+        self.sample_reweight_enabled = sample_reweight_enabled
+        self.weak_neg_weight = weak_neg_weight
+        self.weak_pos_weight = weak_pos_weight
+        self.near_zero_weight = near_zero_weight
+        self.strong_sample_weight = strong_sample_weight
+        self.sign_focal_enabled = sign_focal_enabled
+        self.sign_focal_gamma = sign_focal_gamma
+        self.sign_focal_alpha_neg = sign_focal_alpha_neg
         self.eps = eps
 
         if reg_loss_type == 'l1':
@@ -66,6 +84,42 @@ class ResidualLossComputer:
     def to_device(self, device: torch.device):
         """Placeholder — losses are stateless, but kept for API compatibility."""
         return self
+
+    def _get_sample_groups(self, labels: torch.Tensor):
+        """P5D: Classify samples into groups for reweight analysis.
+
+        weak_neg: -1.0 < label < 0
+        weak_pos: 0 < label < 1.0
+        near_zero: abs(label) <= 0.5 (overlaps with weak_neg/weak_pos)
+        strong_neg: label <= -1.0
+        strong_pos: label >= 1.0
+        """
+        lbl = labels.view(-1)
+        return {
+            'weak_neg': (lbl > -1.0) & (lbl < 0.0),
+            'weak_pos': (lbl > 0.0) & (lbl < 1.0),
+            'near_zero': lbl.abs() <= 0.5,
+            'strong_neg': lbl <= -1.0,
+            'strong_pos': lbl >= 1.0,
+            'all': torch.ones_like(lbl, dtype=torch.bool),
+        }
+
+    def _compute_sample_weights(self, labels: torch.Tensor) -> torch.Tensor:
+        """P5D: Compute per-sample weights based on label groups."""
+        if not self.sample_reweight_enabled:
+            return torch.ones_like(labels.view(-1))
+        lbl = labels.view(-1)
+        weights = torch.ones_like(lbl) * self.strong_sample_weight
+        # weak_neg: -1.0 < label < 0
+        wneg = (lbl > -1.0) & (lbl < 0.0)
+        weights[wneg] = self.weak_neg_weight
+        # weak_pos: 0 < label < 1.0
+        wpos = (lbl > 0.0) & (lbl < 1.0)
+        weights[wpos] = self.weak_pos_weight
+        # near_zero: abs(label) <= 0.5
+        nz = lbl.abs() <= 0.5
+        weights[nz] = max(weights[nz].max().item(), self.near_zero_weight)  # don't reduce weak weight
+        return weights
 
     def compute(
         self,
@@ -83,23 +137,40 @@ class ResidualLossComputer:
         labels = labels.view(-1, 1).float()
         polarity = (labels >= 0).float()  # [B, 1]
 
+        # P5D: Sample weights
+        sample_w = self._compute_sample_weights(labels).view(-1, 1)  # [B, 1]
+        sample_groups = self._get_sample_groups(labels)
+
         # --- 1. Regression Loss ---
         reg_loss = self.reg_loss_fn(output['reg'], labels)
+        if self.sample_reweight_enabled:
+            reg_loss = (reg_loss * sample_w).mean()  # element-wise L1 * weight
 
         # --- 2. Classification Loss ---
         if self.cls_loss_weight > 0:
             cls_loss = self.cls_loss_fn(output['cls'], polarity)
+            if self.sample_reweight_enabled:
+                cls_loss = (cls_loss * sample_w).mean()
         else:
             cls_loss = torch.tensor(0.0, device=labels.device)
 
-        # --- 3. Sign Consistency Loss ---
-        # 鼓励 regression prediction 的符号与 label 符号一致
+        # --- 3. Sign Consistency Loss (P5D: +focal) ---
         if self.sign_consistency_weight > 0:
-            # 使用 BCE 而非直接惩罚：将 reg_pred 通过 scaled sigmoid 映射
-            # 2.0 是缩放因子，让 reg_pred ∈ [-3,3] 映射到合理的 sigmoid 输入范围
             sign_logit = 2.0 * output['reg'].view(-1)
             sign_target = polarity.view(-1)
-            sign_loss = self.cls_loss_fn(sign_logit, sign_target)
+            if self.sign_focal_enabled:
+                # Focal BCE: -α * (1-p)^γ * y*log(p) - (1-α) * p^γ * (1-y)*log(1-p)
+                bce = F.binary_cross_entropy_with_logits(sign_logit, sign_target, reduction='none')
+                probs = torch.sigmoid(sign_logit)
+                p_t = torch.where(sign_target == 1, probs, 1 - probs)
+                focal_weight = (1 - p_t) ** self.sign_focal_gamma
+                # Alpha: weight negative samples more
+                alpha = torch.where(sign_target == 1, 1.0, self.sign_focal_alpha_neg)
+                sign_loss = (alpha * focal_weight * bce).mean()
+            else:
+                sign_loss = self.cls_loss_fn(sign_logit, sign_target)
+            if self.sample_reweight_enabled:
+                sign_loss = sign_loss * sample_w.mean()  # global scaling
         else:
             sign_loss = torch.tensor(0.0, device=labels.device)
 
@@ -158,6 +229,20 @@ class ResidualLossComputer:
             'delta_reg': delta_reg_loss,
             'entropy_reg': entropy_reg,
         }
+        # P5D: Group-level regression loss for diagnostics
+        if self.sample_reweight_enabled:
+            group_reg_losses = {}
+            with torch.no_grad():
+                for grp_name, grp_mask in sample_groups.items():
+                    if grp_name == 'all':
+                        continue
+                    if grp_mask.any():
+                        grp_rl = self.reg_loss_fn(
+                            output['reg'][grp_mask], labels[grp_mask]
+                        ).mean()
+                        group_reg_losses[f'reg_loss_{grp_name}'] = grp_rl
+            result.update(group_reg_losses)
+        return result
 
 
 # Backward-compatible function interface
