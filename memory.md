@@ -258,9 +258,11 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - AWAF-Seq modules: CrossModalTransformer + MaskedAttentionPooling + OursAWAFSeqXLSTM
 - All tests pass (3/3). Branch: p5v-awafseq-crossmodal-upgrade, commit 73f984a.
 
-### P4V.1 AWAF-Seq 40ep Results (2026-06-17)
-- **AWAF-Seq 40ep × 2seeds: 73.9% (+1.2% vs C0 72.7%)**
-- Seed 42: +3.0% improvement (70.0→73.0%). Seed 2024: -0.6% (75.3→74.7)
-- AWAF-Seq better: #1 ACC2, #2 MAE, #3 Corr, #4 variance (1.7% vs 5.3%)
-- AWAF weights more balanced (w_t=0.27 vs C0 0.57)
-- Branch: p4v1-awafseq-training-probe, commit 55ba68a ✅
+### P4V.1 (2026-06-17) — AWAF-Seq 73.9%. Branch: p4v1-awafseq-training-probe.
+
+### P4W (2026-06-17) — MOSI Performance Breakthrough
+- **Vision T>1 extracted: 2199/2199, T=20, 10.3min, CLIP-ViT per-frame**
+- **AWAF-Seq + Vision T>1: 78.4% mean (+4.5% from P4V.1, +5.7% from C0)**
+- Seed 42: 78.8% MAE=0.994 Corr=0.645. Seed 2024: 78.0% MAE=0.965 Corr=0.687
+- MAE sub-1.0 for first time! Simpler=best (HD=256, CL=2, BS=32)
+- Branch: p4w-mosi-awafseq-performance, commit 05c0ad5 ✅
