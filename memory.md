@@ -262,9 +262,10 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 
 ### P4W (2026-06-17) — MOSI 78.4%. Branch: p4w-mosi-awafseq-performance.
 
-### P4X (2026-06-17) — MOSI final + MOSEI prep
-- P4W results confirmed: 78.4% best MOSI result
-- MOSEI: text+audio available, vision BLOCKED (no MP4)
-- Branch: p4x-mosi-vision-mosei-prep, commit 7151b28
-- Vision T=32/40 + component ablation in progress
-- HANDOFF_PHASE_07X.md ready for Web AI review
+### P4X (2026-06-17) — MOSI final + MOSEI prep. Branch: p4x-mosi-vision-mosei-prep.
+
+### P4Y (2026-06-17) — Data Audit
+- MOSI: Grade B+, 2199 MP4+WAV+labels → KEEP (rare, enables Vision T>1)
+- MOSEI: Grade C→B, NO MP4 available (CMU YouTube privacy)
+- Old MOSEI .features deleted (1.26GB unreliable). SDK .csd is standard approach.
+- Branch: p4y-data-redownload-audit, commit d0f2b04 ✅
