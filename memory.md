@@ -290,7 +290,19 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - **2-seed mean**: ACC2=81.25%, stable (σ=0.15%) ✅
 - Branch: p5c-deeptext-xlstm-awaf-residual-refactor, commit 19d6e6c
 
-### P5D (2026-06-17) — Residual Stability & Performance Sprint (IN PROGRESS)
+### P5E (2026-06-17) — UGR-AWAF Residual Architecture Optimization (IN PROGRESS)
+- **D039-D044**: P5E decisions recorded
+- **V2 model**: DeepTextXLSTMAWAFResidualV2 (3.67M params) with UGR gate, delta experts, bounded delta, delta target loss
+- **V2 seed42**: ACC2=82.47%, MAE=0.8111, Corr=0.7385 ✅ >82%
+- **V2 seed2024**: ACC2=81.86%, MAE=0.8486, Corr=0.7316
+- **2-seed mean**: ACC2=82.17%, exceeds P5D 81.25% by +0.92%
+- **Diagnostic ablation**: Vision most important (+1.22%), Audio +0.15%, AWAF>mean (+0.76%), Text-only=80.49%
+- **AWAF weights shifted**: w_t=0.65 (V2) vs 0.18 (P5D) — UGR gate reshapes weight distribution
+- **Not yet run**: Two-stage, weakneg reweight
+- **Model NOT frozen**: <83% target, MAE slightly degraded
+- Branch: p5e-ugr-awaf-residual-optimization, commit: pending
+
+### P5D (2026-06-17) — Residual Stability & Performance Sprint ✅
 - **D032-D038**: P5D decisions recorded
 - **Stability**: 2-seed mean 81.25% confirms residual architecture is stable
 - **Residual analysis**: weak_neg most improved (+1.3% sign), overall effect subtle but positive

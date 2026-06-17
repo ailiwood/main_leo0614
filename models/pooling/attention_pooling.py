@@ -72,4 +72,6 @@ class MaskedAttentionPooling(nn.Module):
         attn = attn / attn.sum(dim=1, keepdim=True).clamp(min=1e-8)
 
         pooled = torch.bmm(attn.unsqueeze(1), H).squeeze(1)  # [B,D]
-        return pooled, attn if return_weights else pooled
+        if return_weights:
+            return pooled, attn
+        return pooled
