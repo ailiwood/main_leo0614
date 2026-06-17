@@ -35,7 +35,7 @@ class StrictTrainer:
         self.l1 = nn.L1Loss(); self.bce = nn.BCEWithLogitsLoss()
         self.opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
         self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            self.opt, mode='min', factor=0.5, patience=8, verbose=False)
+            self.opt, mode='min', factor=0.5, patience=8)
         self.scaler = torch.amp.GradScaler('cuda') if use_amp else None
         self.val_history: List[Dict] = []
         self.best_val_mae = float('inf'); self.best_epoch = 0
