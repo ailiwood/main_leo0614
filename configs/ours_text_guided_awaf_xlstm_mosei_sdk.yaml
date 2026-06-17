@@ -1,0 +1,48 @@
+# P5A Text-Guided AWAF-xLSTM for MOSEI SDK computational sequences.
+model_name: ours_text_guided_awaf_xlstm_mosei_sdk
+class_name: OursTextGuidedAWAFXLSTM
+text_dim: 300
+audio_dim: 74
+vision_dim: 35
+hidden_dim: 256
+proj_dropout: 0.1
+slstm_num_layers: 1
+slstm_dropout: 0.2
+slstm_bidirectional: false
+slstm_pooling: masked_mean
+cross_num_layers: 2
+cross_num_heads: 4
+cross_ffn_dim: 512
+cross_dropout: 0.2
+cross_use_modality_embedding: true
+pooling_type: attention
+pooling_dropout: 0.1
+use_reliability_gate: true
+reliability_dropout: 0.1
+reliability_hidden_ratio: 1.0
+anchor_dropout: 0.1
+anchor_lambda_init: 0.5
+awaf_fusion_mode: awaf
+awaf_tau_init: 1.0
+awaf_dropout: 0.2
+awaf_modality_dropout: true
+modality_dropout_prob: 0.2
+head_reg_hidden: 128
+head_cls_hidden: 128
+head_dropout: 0.3
+use_aux_heads: true
+sign_consistency_weight: 0.1
+sign_consistency_alpha: 2.0
+aux_loss_weight: 0.1
+polarity_margin_weight: 0.0
+polarity_margin: 0.2
+train:
+  lr: 1.0e-4
+  weight_decay: 0.01
+  batch_size: 32
+  epochs: 1
+  early_stopping_patience: 3
+  scheduler: reduce_on_plateau
+  amp: true
+  best_metric: val_MAE
+note: Smoke config for MOSEI SDK features; not final hyperparameters.

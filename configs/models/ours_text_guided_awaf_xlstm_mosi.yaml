@@ -1,0 +1,40 @@
+# P5A Text-Guided AWAF-xLSTM for MOSI strong sequence
+model_name: ours_text_guided_awaf_xlstm
+
+text_dim: 1024
+audio_dim: 768
+vision_dim: 768
+hidden_dim: 256
+proj_dropout: 0.1
+
+slstm_num_layers: 1
+slstm_dropout: 0.2
+slstm_bidirectional: false
+slstm_pooling: masked_mean
+
+cross_num_layers: 2
+cross_num_heads: 4
+cross_ffn_dim: 512
+cross_dropout: 0.2
+cross_use_modality_embedding: true
+
+pooling_type: attention
+pooling_dropout: 0.1
+
+awaf_fusion_mode: awaf
+awaf_tau_init: 1.0
+awaf_dropout: 0.2
+awaf_modality_dropout: true
+modality_dropout_prob: 0.2
+
+head_reg_hidden: 128
+head_cls_hidden: 128
+head_dropout: 0.3
+use_aux_heads: true
+
+use_deconv: false
+use_cme: false
+use_data2vec_audio: false
+
+feature_version: strong_sequence_mosi_v2
+note: "Text-guided AWAF-xLSTM with ModalityReliabilityGate + Text-Anchor Residual"
