@@ -54,8 +54,8 @@ gate=UncertaintyGuidedResidualGate(H,gate_hidden_dim=128,dropout=0.1).to(DEVICE)
 # Delta experts
 def md(): return torch.nn.Sequential(torch.nn.Linear(H,H//2),torch.nn.LayerNorm(H//2),torch.nn.GELU(),torch.nn.Dropout(0.2),torch.nn.Linear(H//2,1)).to(DEVICE)
 drt,dra,drv=md(),md(),md();dct,dca,dcv=md(),md(),md()
-dsr=torch.nn.Parameter(torch.tensor(0.05)).to(DEVICE)
-dsc=torch.nn.Parameter(torch.tensor(0.05)).to(DEVICE)
+dsr=torch.nn.Parameter(torch.tensor(0.05,device=DEVICE))
+dsc=torch.nn.Parameter(torch.tensor(0.05,device=DEVICE))
 
 # Collect all params
 params=list(roberta.parameters())+list(txt_mlp.parameters())+list(reg_th.parameters())+list(cls_th.parameters())
