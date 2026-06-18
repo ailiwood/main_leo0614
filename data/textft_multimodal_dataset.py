@@ -8,11 +8,13 @@ from transformers import AutoTokenizer
 
 class TextFTMultimodalDataset(Dataset):
     def __init__(self, csv_path='data/mosi/label.csv', feature_root='data/features_strong_sequence_mosi_v3_T40',
-                 split='train', tokenizer_name='roberta-large', max_text_len=128, max_audio_len=100, max_vision_len=50):
+                 split='train', tokenizer_name='roberta-large', max_text_len=128, max_audio_len=100, max_vision_len=50,
+                 formal_mode=True):
         self.feature_root = feature_root
         self.max_text_len = max_text_len
         self.max_audio_len = max_audio_len
         self.max_vision_len = max_vision_len
+        self.formal_mode = formal_mode
 
         # Read labels and raw text
         with open(csv_path, 'r', encoding='utf-8') as f:
@@ -41,7 +43,7 @@ class TextFTMultimodalDataset(Dataset):
         # Label
         label = float(r['label'])
 
-        # Load frozen audio/vision features
+        # Load frozen audio/vision features — formal_mode MUST have real features
         feat_path = os.path.join(self.feat_dir, f'{sample_id}.npz')
         if os.path.exists(feat_path):
             feat = np.load(feat_path, allow_pickle=True)
@@ -49,8 +51,14 @@ class TextFTMultimodalDataset(Dataset):
             audio_mask = torch.from_numpy(feat['audio_mask']).long()[:self.max_audio_len]
             vision_seq = torch.from_numpy(feat['vision_seq']).float()[:self.max_vision_len]
             vision_mask = torch.from_numpy(feat['vision_mask']).long()[:self.max_vision_len]
+        elif self.formal_mode:
+            raise FileNotFoundError(
+                f"TextFTMultimodalDataset formal_mode: missing feature file for "
+                f"sample_id={sample_id}, split={split}, path={feat_path}. "
+                f"Cannot use zero fallback in formal experiments."
+            )
         else:
-            # Fallback: zero features
+            # Debug-only fallback: zero features (NOT for formal experiments)
             audio_seq = torch.zeros(self.max_audio_len, 768)
             audio_mask = torch.zeros(self.max_audio_len, dtype=torch.long)
             vision_seq = torch.zeros(self.max_vision_len, 768)
