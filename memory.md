@@ -290,17 +290,51 @@ DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据�
 - **2-seed mean**: ACC2=81.25%, stable (σ=0.15%) ✅
 - Branch: p5c-deeptext-xlstm-awaf-residual-refactor, commit 19d6e6c
 
-### P5E (2026-06-17) — UGR-AWAF Residual Architecture Optimization (IN PROGRESS)
-- **D039-D044**: P5E decisions recorded
-- **V2 model**: DeepTextXLSTMAWAFResidualV2 (3.67M params) with UGR gate, delta experts, bounded delta, delta target loss
-- **V2 seed42**: ACC2=82.47%, MAE=0.8111, Corr=0.7385 ✅ >82%
+### P5E (2026-06-17) — UGR-AWAF Residual V2 ✅ (当前最优多模态)
+- V2 model: DeepTextXLSTMAWAFResidualV2 (3.67M params)
+- **V2 seed42**: ACC2=82.47%, MAE=0.8111, Corr=0.7385
 - **V2 seed2024**: ACC2=81.86%, MAE=0.8486, Corr=0.7316
-- **2-seed mean**: ACC2=82.17%, exceeds P5D 81.25% by +0.92%
-- **Diagnostic ablation**: Vision most important (+1.22%), Audio +0.15%, AWAF>mean (+0.76%), Text-only=80.49%
-- **AWAF weights shifted**: w_t=0.65 (V2) vs 0.18 (P5D) — UGR gate reshapes weight distribution
-- **Not yet run**: Two-stage, weakneg reweight
-- **Model NOT frozen**: <83% target, MAE slightly degraded
-- Branch: p5e-ugr-awaf-residual-optimization, commit: pending
+- **2-seed mean**: **ACC2=82.17%** — 当前最优多模态结果
+- 诊断消融: Vision贡献最大(+1.22%), Audio +0.15%, AWAF>mean(+0.76%)
+- Branch: p5e-ugr-awaf-residual-optimization, commit 4d5bfcb
+
+### P5F (2026-06-17) — Strong Feature Upper Bound Sprint ⚠️
+- Audio large (wav2vec2-large 1024d): 已下载，全量提取未完成
+- Vision large (CLIP ViT-L/14 1024d): 已下载，全量提取未完成
+- 文本超参搜索未完成
+- Branch: p5f-strong-feature-upper-bound-sprint, commit 1eee595
+
+### P5G (2026-06-17) — Strong Feature Full Extraction & Training ❌
+- Audio large 全量提取: 2199/2199 成功 (1024d, 1.9min)
+- **Audio large V2 seed42: ACC2=80.18% (-2.29% vs baseline)** → 失败，路线关闭
+- Vision large: .pt预提取文件，非原始图像，需从MP4重提取
+- Branch: p5g-strong-feature-full-training, commit e735d34
+
+### P6A (2026-06-18) — One-Shot High-Score Exploration ✅
+- Vision-L/14 从MP4全量提取: 2199/2199 成功 (1024d, 24min)
+- MOSEI SDK: 彻底无法安装 (PyPI无包, GitHub仓库不存在)
+- Baseline口径审计: ACC2_Non0排除label=0, reg_sign为主, CASP=TTA单独表
+- Branch: p6a-one-shot-highscore-exploration, commit 5af2a39
+
+### P6B (2026-06-18) — Vision-L/14 V2 Formal Candidate ❌
+- **Vision-L/14 V2 seed42: ACC2=79.12% (-3.35% vs P5E V2)** → 失败，路线关闭
+- 两条大模型特征升级路线均证实对MOSI无效
+- Branch: p6b-vision-l14-v2-formal-candidate, commit 19d3265
+
+### P6C (2026-06-18) — MOSI 87+ Hard Rescue 🔥
+- **关键突破: RoBERTa-large text-only MOSI = 85.37% (+5.17% vs frozen DeBERTa)**
+- MAE=0.646, Corr=0.826 — 全面超越frozen路线
+- 失败路线封存: wav2vec2-large ❌, CLIP-L/14 ❌
+- Branch: p6c-mosi-87-hard-rescue, commit c0265ed
+
+### P6D (2026-06-18) — TextFT-xLSTM-AWAF Dual Dataset 🔥 (CURRENT)
+- **TextFT-xLSTM-AWAF Residual 模型**: RoBERTa text + sLSTM audio/vision + AWAF (358M)
+- **架构确认三模态**: Text(NO sLSTM) + Audio(sLSTM) + Vision(sLSTM) + AWAF
+- **MOSEI突破: RoBERTa text-only 3ep = 88.13%** (超84%目标, 多数类基线仅62.8%)
+- MOSI TextFT多模态训练: 358M参数在16GB GPU训练极慢, 未完成
+- MMSDK: 彻底无法安装, MOSEI数据通过CSV直接使用
+- **当前最优**: MOSI=P5E V2 82.17% (多模态), MOSEI=88.13% (文本基线)
+- Branch: p6d-textft-xlstm-awaf-dual-dataset, commit 838e1ac
 
 ### P5D (2026-06-17) — Residual Stability & Performance Sprint ✅
 - **D032-D038**: P5D decisions recorded

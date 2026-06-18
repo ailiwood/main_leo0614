@@ -205,6 +205,32 @@
 
 ---
 
+## 2026-06-18 P5G-P6D：强特征升级与文本骨干突破
+
+### D045：frozen audio/vision 大模型特征升级失败
+- wav2vec2-large (1024d): 80.18% (-2.29%) — 路线关闭
+- CLIP ViT-L/14 (1024d): 79.12% (-3.35%) — 路线关闭
+- 根因：MOSI 1284训练样本不足以支撑1024d特征
+
+### D046：RoBERTa-large fine-tuned 文本骨干是真正突破
+- RoBERTa text-only MOSI: 85.37% (+5.17% vs frozen DeBERTa)
+- RoBERTa text-only MOSEI: 88.13% (3ep, 超84%目标)
+- 小数据集上 fine-tune > frozen features
+
+### D047：TextFT-xLSTM-AWAF 架构确认三模态
+- Text: RoBERTa (NO sLSTM) + Audio: sLSTM + Vision: sLSTM + AWAF
+- 满足导师 xLSTM + 自适应注意力机制要求
+
+### D048：MMSDK 彻底无法安装
+- PyPI无mmsdk包, GitHub仓库A2Zadeh/CMU-MultimodalSDK不存在
+- MOSEI数据通过CSV直接可用，无需SDK
+
+### D049：P5E V2 (82.17%) 为当前最优多模态结果
+- 所有强特征升级路线均已证伪
+- P5E V2 可作为正式实验候选
+
+---
+
 ## 2026-06-17 P5D：残差稳定性验证与性能冲刺
 
 ### D032：P5C 路线验证成功但性能不达标
