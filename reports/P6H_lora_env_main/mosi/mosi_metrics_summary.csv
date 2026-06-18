@@ -1,0 +1,2 @@
+phase,model,dataset,seed,epochs,best_epoch,best_val_ACC2,text_base_ACC2,final_ACC2,residual_gain,F1_Non0,MAE,Corr,ACC7,awaf_w_t,awaf_w_a,awaf_w_v,gate_mean,trainable_M,confidence,paper_usable
+P6H,MinimalLoRA-AWAF,MOSI,42,50,unknown,87.50,86.43,86.43,0.00,84.36,0.6775,0.8275,45.92,0.0056,0.0100,0.9844,0.4596,4.64,B,no

@@ -1,0 +1,6 @@
+config,best_val_ACC2,best_epoch,val_MAE_best,val_Corr_best,val_F1_best,final_awaf_entropy,final_gate_mean,final_delta_abs_mean,text_base_drop,selected_for_full_run,failure_reason,notes
+R1_norm_tau3_dsr02_gate2,87.50,30,0.821,0.765,89.49,0.576,0.338,0.014,,no,gate关闭(0.34)+delta过小(0.014)→残差无效。87.5%来自text branch,Gate从0.88→0.34模型学会抑制残差
+R2_entropy,87.96,30,0.810,0.774,89.76,1.005,0.333,0.018,,no,gate关闭(0.33)+delta小(0.018)→残差无效。AWAF entropy=1.005(健康),entropy loss成功但gate仍抑制残差
+R3_uniform_mix,87.96,30,0.811,0.771,89.84,0.912,0.343,0.018,,no,同R2(87.96)。uniform mix不额外提升,gate仍关闭
+R4_conservative,57.41,7,1.417,0.221,72.94,1.055,0.723,0.002,,no,lr过低(1e-5/2e-6)→early stop at E7,text未学习
+BEST_R2_full,---,---,---,---,---,---,---,---,yes,running,Full seed42 50ep+test

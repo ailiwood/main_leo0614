@@ -56,6 +56,10 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
         modality_dropout_prob: float = 0.1,
         context_hidden_ratio: float = 0.5,
         eps: float = 1e-8,
+        # === P6H-R 修复开关 ===
+        use_modal_layernorm: bool = False,       # 模态输入 LayerNorm
+        awaf_uniform_mix: float = 0.0,           # weight floor ε: w=(1-ε)*softmax+ε/3
+        return_diagnostics: bool = False,         # 返回 L2 norm / entropy 诊断
     ):
         """
         Args:
@@ -69,6 +73,9 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
             modality_dropout_prob: 模态 dropout 概率
             context_hidden_ratio: 上下文增强中 attention 的 hidden dim 比例
             eps: 数值稳定常数
+            use_modal_layernorm: [P6H-R] 在 AWAF 前对各模态独立 LayerNorm
+            awaf_uniform_mix: [P6H-R] 权重均匀混合，防止单模态崩溃
+            return_diagnostics: [P6H-R] 输出 L2 norm 和 entropy 诊断
         """
         super().__init__()
         self.hidden_dim = hidden_dim
@@ -76,10 +83,19 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
         self.use_modality_dropout = use_modality_dropout and ('awaf' in fusion_mode)
         self.modality_dropout_prob = modality_dropout_prob
         self.eps = eps
+        self.awaf_uniform_mix = awaf_uniform_mix
+        self.return_diagnostics = return_diagnostics
 
         # --- 可学习温度 τ ---
         # 用 softplus 保证 τ ≥ 0.1
         self.tau_raw = nn.Parameter(torch.tensor(self._inv_softplus(tau_init)))
+
+        # === P6H-R: 模态输入 LayerNorm ===
+        self.use_modal_layernorm = use_modal_layernorm
+        if use_modal_layernorm:
+            self.modal_ln_t = nn.LayerNorm(hidden_dim)
+            self.modal_ln_a = nn.LayerNorm(hidden_dim)
+            self.modal_ln_v = nn.LayerNorm(hidden_dim)
 
         # ============================================================
         # 第一段: 跨模态上下文增强 (仅在 awaf / awaf_no_interaction 模式下使用)
@@ -260,6 +276,17 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
             h_v * masks[2],
         )
 
+    def compute_entropy(self, weights: torch.Tensor) -> torch.Tensor:
+        """计算 AWAF 权重 per-sample entropy: H = -sum(w * log(w + eps))。"""
+        w = weights.clamp(min=self.eps)
+        return -(w * torch.log(w)).sum(dim=-1)  # [B]
+
+    @property
+    def max_entropy(self) -> float:
+        """三模态均匀分布 log(3) ≈ 1.099 — 最大可能 entropy。"""
+        import math
+        return math.log(3.0)
+
     def forward(
         self,
         h_t: torch.Tensor,
@@ -278,8 +305,25 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
             dict:
                 'Z':      融合表示 [B, d]
                 'weights': 三模态权重 [B, 3] (w_t, w_a, w_v), sum=1
+                'diagnostics': (if return_diagnostics) L2 norms, entropy
         """
         B, d = h_t.shape
+        diagnostics = {}
+
+        # === P6H-R: 模态输入 LayerNorm (在 dropout/context 之前) ===
+        if self.use_modal_layernorm:
+            l2_before_t = h_t.norm(dim=-1).mean()
+            l2_before_a = h_a.norm(dim=-1).mean()
+            l2_before_v = h_v.norm(dim=-1).mean()
+            h_t = self.modal_ln_t(h_t)
+            h_a = self.modal_ln_a(h_a)
+            h_v = self.modal_ln_v(h_v)
+            l2_after_t = h_t.norm(dim=-1).mean()
+            l2_after_a = h_a.norm(dim=-1).mean()
+            l2_after_v = h_v.norm(dim=-1).mean()
+            if self.return_diagnostics:
+                diagnostics['l2_before_ln'] = (float(l2_before_t.detach()), float(l2_before_a.detach()), float(l2_before_v.detach()))
+                diagnostics['l2_after_ln'] = (float(l2_after_t.detach()), float(l2_after_a.detach()), float(l2_after_v.detach()))
 
         # ---- 模态 Dropout (仅训练时) ----
         h_t, h_a, h_v = self._modality_dropout((h_t, h_a, h_v))
@@ -339,7 +383,21 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
 
             # w = softmax(e / τ)
             tau_val = self.tau.clamp(min=0.1)
-            weights = F.softmax(e / tau_val, dim=-1)  # [B, 3]
+            logits = e / tau_val  # [B, 3]
+            weights_raw = F.softmax(logits, dim=-1)  # [B, 3]
+
+            # === P6H-R: Uniform mix (weight floor) ===
+            if self.awaf_uniform_mix > 0.0:
+                eps_mix = self.awaf_uniform_mix
+                weights = (1.0 - eps_mix) * weights_raw + eps_mix / 3.0
+            else:
+                weights = weights_raw
+
+            # === P6H-R: Entropy 诊断 ===
+            if self.return_diagnostics:
+                diagnostics['entropy'] = self.compute_entropy(weights).mean().detach()
+                diagnostics['entropy_raw'] = self.compute_entropy(weights_raw).mean().detach()
+                diagnostics['tau'] = tau_val.detach()
 
             # Z = w_t·ĥ_t + w_a·ĥ_a + w_v·ĥ_v
             Z = (weights[:, 0:1] * ĥ_t +
@@ -349,6 +407,8 @@ class AdaptiveWeightedAttentionFusion(nn.Module):
         result = {'Z': Z}
         if return_weights:
             result['weights'] = weights
+        if self.return_diagnostics and diagnostics:
+            result['diagnostics'] = diagnostics
         return result
 
 
