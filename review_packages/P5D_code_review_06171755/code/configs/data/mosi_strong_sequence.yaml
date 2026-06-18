@@ -1,0 +1,28 @@
+# configs/data/mosi_strong_sequence.yaml
+# Strong sequence feature configuration for MOSI
+
+dataset_name: MOSI
+feature_version: strong_sequence_mosi_v1
+feature_root: data/features_strong_sequence_mosi
+
+text_dim: 1024
+audio_dim: 768
+vision_dim: 1024
+
+text_is_sequence: true
+audio_is_sequence: true
+vision_is_sequence: false
+
+text_model: microsoft/deberta-large
+audio_model: facebook/wav2vec2-base-960h
+vision_model: openai/clip-vit-base-patch32
+
+vision_note: current CLIP .pt is T=1 pooled feature from pre-extracted frames
+label_range: [-3, 3]
+
+strict_protocol: true
+
+splits:
+  train: 1284
+  val: 229
+  test: 686
