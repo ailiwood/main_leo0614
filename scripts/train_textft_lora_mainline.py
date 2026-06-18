@@ -42,10 +42,14 @@ def load_config_yaml(path):
 
 
 def build_config(yc, device='cuda'):
-    """从 YAML dict 构建 TextFTLoRAConfig。"""
+    """从 YAML dict 构建 TextFTLoRAConfig (P6I)。"""
     m = yc.get('model', yc)
     t = yc.get('training', {})
     return TextFTLoRAConfig(
+        # --- P6I mode ---
+        mode=m.get('mode', 'text_av_residual'),
+        freeze_text_base=m.get('freeze_text_base', False),
+        # --- Text ---
         text_model_name=m.get('text_model_name', 'roberta-large'),
         hidden_dim=m.get('hidden_dim', 256),
         audio_input_dim=m.get('audio_dim', 768),
@@ -58,6 +62,7 @@ def build_config(yc, device='cuda'):
         lora_alpha=m.get('lora_alpha', 32),
         lora_dropout=m.get('lora_dropout', 0.05),
         lora_targets=tuple(m.get('lora_targets', ['query', 'value'])),
+        # --- AWAF ---
         awaf_fusion_mode=m.get('awaf_fusion_mode', 'awaf'),
         tau_init=m.get('tau_init', 3.0),
         awaf_dropout=m.get('awaf_dropout', 0.1),
@@ -65,11 +70,23 @@ def build_config(yc, device='cuda'):
         modality_dropout_prob=m.get('modality_dropout_prob', 0.1),
         use_modal_layernorm=m.get('use_modal_layernorm', True),
         awaf_uniform_mix=m.get('awaf_uniform_mix', 0.0),
-        lambda_awaf_entropy=m.get('lambda_awaf_entropy', 0.0),
-        use_uncertainty_gate=m.get('use_uncertainty_gate', True),
+        lambda_awaf_entropy=m.get('lambda_awaf_entropy', 0.01),
+        # --- Old Gate/Delta (P6I: default off) ---
+        use_uncertainty_gate=m.get('use_uncertainty_gate', False),
         gate_init_bias=m.get('gate_init_bias', 2.0),
-        max_delta=m.get('max_delta', 0.5),
+        use_delta_experts=m.get('use_delta_experts', False),
+        max_delta=m.get('max_delta', 1.0),
         delta_scale_init=m.get('delta_scale_init', 0.2),
+        # --- Text-Confidence Residual (P6I) ---
+        use_text_conf_residual=m.get('use_text_conf_residual', False),
+        tcr_gate_hidden_dim=m.get('tcr_gate_hidden_dim', 128),
+        tcr_delta_hidden_dim=m.get('tcr_delta_hidden_dim', 128),
+        tcr_dropout=m.get('tcr_dropout', 0.1),
+        tcr_max_delta=m.get('tcr_max_delta', 1.0),
+        tcr_gate_floor=m.get('tcr_gate_floor', 0.2),
+        tcr_detach_text_for_residual=m.get('tcr_detach_text_for_residual', True),
+        delta_loss_weight=m.get('delta_loss_weight', 1.0),
+        # --- Device ---
         device=device,
     )
 
@@ -303,23 +320,28 @@ def main():
     # Model
     # ================================================================
     config = build_config(yc, DEVICE)
-    print(f'[MODEL] Building TextFTLoRAXLSTMAWAFResidual...')
-    print(f'  tau_init={config.tau_init}  delta_scale_init={config.delta_scale_init}')
-    print(f'  gate_init_bias={config.gate_init_bias}  use_modal_layernorm={config.use_modal_layernorm}')
-    print(f'  awaf_uniform_mix={config.awaf_uniform_mix}  lambda_entropy={config.lambda_awaf_entropy}')
+    print(f'[MODEL] Building TextFTLoRAXLSTMAWAFResidual (mode={config.mode})...')
+    print(f'  needs_text={config.needs_text}  needs_audio={config.needs_audio_branch}  needs_vision={config.needs_vision_branch}')
+    print(f'  use_text_conf_residual={config.use_text_conf_residual}  freeze_text_base={config.freeze_text_base}')
     model = TextFTLoRAXLSTMAWAFResidual(config)
     model = model.to(DEVICE)
     print(f'  Params: {model.count_trainable()}')
 
     tokenizer = AutoTokenizer.from_pretrained(config.text_model_name)
 
-    # Optimizer: 分组 lr
-    lora_params = [p for n, p in model.roberta.named_parameters() if 'lora' in n.lower() and p.requires_grad]
-    other_params = [p for p in model.collect_trainable_params() if p not in set(lora_params)]
+    # Optimizer: 分组 lr (text_only mode has no residual params)
+    if config.needs_text:
+        lora_params = [p for n, p in model.roberta.named_parameters() if 'lora' in n.lower() and p.requires_grad]
+        other_params = [p for p in model.collect_trainable_params() if p not in set(lora_params)]
+    else:
+        lora_params = []
+        other_params = list(model.collect_trainable_params())
     param_groups = [
         {'params': lora_params, 'lr': LR_LORA},
         {'params': other_params, 'lr': LR},
     ]
+    # Filter empty groups
+    param_groups = [g for g in param_groups if g['params']]
     opt = torch.optim.AdamW(param_groups, weight_decay=WEIGHT_DECAY)
     scaler = GradScaler(device='cuda')
 
@@ -352,20 +374,29 @@ def main():
             out = model(batch)
             lbl = batch['label'].to(DEVICE)
 
-            # Loss: L1 regression + delta alignment
+            # Loss: L1 regression
             lr_loss = F.l1_loss(out['reg'], lbl)
 
-            # Delta alignment: effective_delta should match (label - text_base)
-            td = lbl - out['reg_text_base'].detach()
-            ld = F.smooth_l1_loss(out['effective_delta_reg'], td)
+            # Delta loss (mode-dependent)
+            ld = torch.tensor(0.0, device=DEVICE)
+            DELTA_LOSS_WEIGHT = t.get('delta_loss_weight', 1.0)
 
-            loss = lr_loss + 0.2 * ld
+            if config.use_text_conf_residual and 'delta_loss' in out and out['delta_loss'] is not None:
+                # P6I: text_confidence_residual provides its own delta_loss
+                ld = out['delta_loss']
+                loss = lr_loss + DELTA_LOSS_WEIGHT * ld
+            elif 'effective_delta_reg' in out and 'reg_text_base' in out:
+                # Old delta alignment
+                td = lbl - out['reg_text_base'].detach()
+                ld = F.smooth_l1_loss(out['effective_delta_reg'], td)
+                loss = lr_loss + 0.2 * ld
+            else:
+                loss = lr_loss
 
-            # [P6H-R] AWAF entropy regularization (鼓励权重均匀)
-            if LAMBDA_ENTROPY > 0.0:
+            # AWAF entropy regularization
+            if LAMBDA_ENTROPY > 0.0 and 'awaf_weights' in out:
                 w = out['awaf_weights']
                 awaf_entropy = model.awaf.compute_entropy(w).mean()
-                # 最大化 entropy → 最小化 -entropy
                 loss = loss - LAMBDA_ENTROPY * awaf_entropy
 
             loss = loss / ACCUM
@@ -399,17 +430,31 @@ def main():
         awaf_ent = 0.0
         gate_m = 0.0
         delta_abs_m = 0.0
+        text_conf_m = 0.0
         with torch.no_grad():
             batch0 = next(iter(vl))
             out0 = model({k: v.to(DEVICE) if isinstance(v, torch.Tensor) else v for k, v in batch0.items()})
-            awaf_ent = model.awaf.compute_entropy(out0['awaf_weights']).mean().item()
-            gate_m = out0['gate_reg'].mean().item()
-            delta_abs_m = out0['effective_delta_reg'].abs().mean().item()
+            if 'awaf_weights' in out0 and model.config.needs_awaf:
+                awaf_ent = model.awaf.compute_entropy(out0['awaf_weights']).mean().item()
+            if 'gate' in out0:
+                gate_m = out0['gate'].mean().item()
+            elif 'gate_reg' in out0:
+                gate_m = out0['gate_reg'].mean().item()
+            if 'effective_delta_reg' in out0:
+                delta_abs_m = out0['effective_delta_reg'].abs().mean().item()
+            elif 'delta' in out0:
+                delta_abs_m = out0['delta'].abs().mean().item()
+            if 'text_confidence' in out0:
+                text_conf_m = out0['text_confidence'].mean().item()
 
         # --- Log ---
+        extra = ''
+        if config.use_text_conf_residual:
+            extra = f'  conf={text_conf_m:.4f}  gate={gate_m:.4f}  |δ|={delta_abs_m:.4f}'
+        elif config.needs_awaf:
+            extra = f'  ent={awaf_ent:.4f}  gate={gate_m:.4f}  |δ|={delta_abs_m:.4f}'
         print(f'E{epoch:2d}: loss={avg_loss:.4f}  val_ACC2={m["ACC2_Non0"]:.2f}%  '
-              f'val_MAE={m["MAE"]:.4f}  val_Corr={m["Corr"]:.4f}  '
-              f'ent={awaf_ent:.4f}  gate={gate_m:.4f}  |δ|={delta_abs_m:.4f}')
+              f'val_MAE={m["MAE"]:.4f}  val_Corr={m["Corr"]:.4f}{extra}')
 
         # --- Record ---
         metrics_epoch['epoch'].append(epoch)
@@ -469,125 +514,164 @@ def main():
         print(f'[TEST] Loaded best model (epoch {best_epoch})')
 
     model.eval()
-    tp_list, tl_list, aw_list, gv_list, rb_list, delta_list = [], [], [], [], [], []
+    tp_list, tl_list = [], []
+    aw_list, gv_list, rb_list, delta_list = [], [], [], []
+    tconf_list, tunc_list = [], []  # P6I
+
+    has_rb = config.needs_text
+    has_aw = config.needs_awaf
+    has_gate = 'gate' in (config.mode and ['text_confidence_residual'] or []) or config.use_uncertainty_gate
+
     with torch.no_grad():
         for batch in tqdm(tl_test, desc='Test'):
             out = model(batch)
             tp_list.append(out['reg'].cpu())
             tl_list.append(batch['label'].cpu())
-            aw_list.append(out['awaf_weights'].cpu())
-            gv_list.append(out['gate_reg'].cpu())
-            rb_list.append(out['reg_text_base'].cpu())
-            delta_list.append(out['effective_delta_reg'].cpu())
+            if has_rb and 'reg_text_base' in out:
+                rb_list.append(out['reg_text_base'].cpu())
+            if has_aw and 'awaf_weights' in out:
+                aw_list.append(out['awaf_weights'].cpu())
+            if 'gate' in out:
+                gv_list.append(out['gate'].cpu())
+            elif 'gate_reg' in out:
+                gv_list.append(out['gate_reg'].cpu())
+            if 'effective_delta_reg' in out:
+                delta_list.append(out['effective_delta_reg'].cpu())
+            elif 'delta' in out:
+                delta_list.append(out['delta'].cpu())
+            if 'text_confidence' in out:
+                tconf_list.append(out['text_confidence'].cpu())
+            if 'text_uncertainty' in out:
+                tunc_list.append(out['text_uncertainty'].cpu())
 
     rp = torch.cat(tp_list)
     tg = torch.cat(tl_list)
     rs = torch.where(rp >= 0, 1.0, -1.0)
-    aw = torch.cat(aw_list)
-    gv = torch.cat(gv_list)
-    rb = torch.cat(rb_list)
-    ed = torch.cat(delta_list)
-
-    # Compute metrics
     m_final = compute_all_metrics(rp, rs, tg)
-    m_base = compute_all_metrics(rb, rs, tg)
+
+    rb_np = None
+    m_base = None
+    if rb_list:
+        rb = torch.cat(rb_list)
+        rb_np = rb.numpy().flatten()
+        m_base = compute_all_metrics(rb, rs, tg)
+
+    aw_np = np.zeros((len(tg), 3)) if aw_list else None
+    if aw_list:
+        aw = torch.cat(aw_list)
+        aw_np = aw.numpy()
+
+    gv_np = np.zeros(len(tg)) if gv_list else None
+    if gv_list:
+        gv = torch.cat(gv_list)
+        gv_np = gv.numpy().flatten()
+
+    ed_np = np.zeros(len(tg)) if delta_list else None
+    if delta_list:
+        ed = torch.cat(delta_list)
+        ed_np = ed.numpy().flatten()
+
+    tconf_np = np.zeros(len(tg)) if tconf_list else None
+    if tconf_list:
+        tconf = torch.cat(tconf_list)
+        tconf_np = tconf.numpy().flatten()
 
     # ================================================================
     # Print & save results
     # ================================================================
-    residual_gain = m_final['ACC2_Non0'] - m_base['ACC2_Non0']
+    residual_gain = 0.0
+    if m_base:
+        residual_gain = m_final['ACC2_Non0'] - m_base['ACC2_Non0']
+
     print(f'\n{"="*60}')
-    print(f'P6H-R MOSI s{SEED} ({EPOCHS}ep) — Best epoch: {best_epoch}')
-    print(f'  Text-base ACC2: {m_base["ACC2_Non0"]:.2f}%')
+    print(f'P6I MOSI s{SEED} mode={config.mode} — Best epoch: {best_epoch}')
+    if m_base:
+        print(f'  Text-base ACC2: {m_base["ACC2_Non0"]:.2f}%')
     print(f'  Final    ACC2: {m_final["ACC2_Non0"]:.2f}%')
-    print(f'  Residual GAIN: {residual_gain:+.2f}%')
+    if m_base:
+        print(f'  Residual GAIN: {residual_gain:+.2f}%')
     print(f'  MAE: {m_final["MAE"]:.4f}  Corr: {m_final["Corr"]:.4f}  ACC7: {m_final["ACC7"]:.2f}%')
     print(f'  F1_Non0: {m_final["F1_Non0"]:.2f}%')
-    print(f'  AWAF: w_t={aw[:,0].mean():.4f} w_a={aw[:,1].mean():.4f} w_v={aw[:,2].mean():.4f}')
-    print(f'  Gate mean: {gv.mean().item():.4f}  |δ| mean: {ed.abs().mean().item():.4f}')
-    print(f'  δ_scale_reg: {model.delta_scale_reg.item():.4f}')
-    print(f'  AWAF τ: {model.awaf.tau.item():.4f}')
-    print(f'  AWAF entropy: {model.awaf.compute_entropy(aw).mean().item():.4f}')
+    if aw_np is not None and config.needs_awaf:
+        print(f'  AWAF: w_t={aw_np[:,0].mean():.4f} w_a={aw_np[:,1].mean():.4f} w_v={aw_np[:,2].mean():.4f}')
+    if gv_np is not None:
+        print(f'  Gate mean: {gv_np.mean():.4f}')
+    if ed_np is not None:
+        print(f'  |δ| mean: {np.abs(ed_np).mean():.4f}')
+    if tconf_np is not None:
+        print(f'  Text confidence mean: {tconf_np.mean():.4f}')
     print(f'{"="*60}')
 
     # Save results JSON
     result = {
-        'config': args.config, 'seed': SEED, 'epochs': epoch, 'best_epoch': best_epoch,
-        'best_val_ACC2': best_val_acc,
-        'text_base_ACC2': m_base['ACC2_Non0'], 'final_ACC2': m_final['ACC2_Non0'],
-        'residual_gain': residual_gain,
-        'F1_Non0': m_final['F1_Non0'], 'MAE': m_final['MAE'], 'Corr': m_final['Corr'],
-        'ACC7': m_final['ACC7'],
-        'awaf_w_t': float(aw[:, 0].mean()), 'awaf_w_a': float(aw[:, 1].mean()),
-        'awaf_w_v': float(aw[:, 2].mean()),
-        'gate_mean': float(gv.mean()), 'gate_std': float(gv.std()),
-        'delta_abs_mean': float(ed.abs().mean()), 'delta_std': float(ed.std()),
-        'delta_scale_reg': float(model.delta_scale_reg.item()),
-        'awaf_tau': float(model.awaf.tau.item()),
-        'awaf_entropy': float(model.awaf.compute_entropy(aw).mean().item()),
+        'config': args.config, 'seed': SEED, 'mode': config.mode,
+        'epochs': epoch, 'best_epoch': best_epoch, 'best_val_ACC2': best_val_acc,
+        'final_ACC2': m_final['ACC2_Non0'], 'F1_Non0': m_final['F1_Non0'],
+        'MAE': m_final['MAE'], 'Corr': m_final['Corr'], 'ACC7': m_final['ACC7'],
         'trainable_M': model.count_trainable()['trainable_M'],
     }
+    if m_base:
+        result['text_base_ACC2'] = m_base['ACC2_Non0']
+        result['residual_gain'] = residual_gain
+    if aw_np is not None:
+        result.update({
+            'awaf_w_t': float(aw_np[:,0].mean()), 'awaf_w_a': float(aw_np[:,1].mean()),
+            'awaf_w_v': float(aw_np[:,2].mean()),
+        })
+    if gv_np is not None:
+        result['gate_mean'] = float(gv_np.mean())
+        result['gate_std'] = float(gv_np.std())
+    if ed_np is not None:
+        result['delta_abs_mean'] = float(np.abs(ed_np).mean())
+    if tconf_np is not None:
+        result['text_confidence_mean'] = float(tconf_np.mean())
     json.dump(result, open(os.path.join(out_dir, 'result.json'), 'w'), indent=2)
 
-    # Save per-sample CSVs
+    # Save per-sample CSVs (mode-dependent)
     sample_ids = [f'sample_{i}' for i in range(len(tg))]
     rp_np = rp.numpy().flatten()
     tg_np = tg.numpy().flatten()
-    rb_np = rb.numpy().flatten()
-    gv_np = gv.numpy().flatten()
-    ed_np = ed.numpy().flatten()
-    aw_np = aw.numpy()
 
-    save_predictions_csv(
-        os.path.join(out_dir, 'predictions_test.csv'),
-        sample_ids, tg_np, rb_np, rp_np, ed_np, gv_np, aw_np,
-    )
-    save_group_error_csv(
-        os.path.join(out_dir, 'group_error_analysis.csv'),
-        sample_ids, tg_np, rb_np, rp_np, aw_np,
-    )
+    if rb_np is not None and aw_np is not None:
+        save_predictions_csv(
+            os.path.join(out_dir, 'predictions_test.csv'),
+            sample_ids, tg_np, rb_np, rp_np,
+            ed_np if ed_np is not None else np.zeros_like(rp_np),
+            gv_np if gv_np is not None else np.zeros_like(rp_np),
+            aw_np,
+        )
+        save_group_error_csv(
+            os.path.join(out_dir, 'group_error_analysis.csv'),
+            sample_ids, tg_np, rb_np, rp_np, aw_np,
+        )
 
-    # Save AWAF weights CSV
-    with open(os.path.join(out_dir, 'awaf_weights_test.csv'), 'w', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['sample_id', 'w_t', 'w_a', 'w_v'])
-        for i in range(len(sample_ids)):
-            w.writerow([sample_ids[i], float(aw_np[i, 0]), float(aw_np[i, 1]), float(aw_np[i, 2])])
+    if aw_np is not None:
+        with open(os.path.join(out_dir, 'awaf_weights_test.csv'), 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(['sample_id', 'w_t', 'w_a', 'w_v'])
+            for i in range(len(sample_ids)):
+                w.writerow([sample_ids[i], float(aw_np[i,0]), float(aw_np[i,1]), float(aw_np[i,2])])
 
-    # Save text_base_delta CSV
-    with open(os.path.join(out_dir, 'text_base_delta_test.csv'), 'w', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['sample_id', 'label', 'text_base_pred', 'final_pred', 'delta',
-                     'gate', 'abs_error_tb', 'abs_error_final'])
-        for i in range(len(sample_ids)):
-            w.writerow([sample_ids[i], float(tg_np[i]), float(rb_np[i]), float(rp_np[i]),
-                         float(ed_np[i]), float(gv_np[i]),
-                         abs(float(rb_np[i]) - float(tg_np[i])),
-                         abs(float(rp_np[i]) - float(tg_np[i]))])
+    # Save text_confidence CSV (P6I)
+    if tconf_np is not None:
+        with open(os.path.join(out_dir, 'text_confidence_test.csv'), 'w', newline='') as f:
+            w = csv.writer(f)
+            w.writerow(['sample_id', 'label', 'final_pred', 'text_base_pred', 'text_confidence',
+                         'text_uncertainty', 'gate', 'delta'])
+            for i in range(len(sample_ids)):
+                w.writerow([sample_ids[i], float(tg_np[i]), float(rp_np[i]),
+                             float(rb_np[i]) if rb_np is not None else '',
+                             float(tconf_np[i]), float(tunc_np[i]) if tunc_np is not None else '',
+                             float(gv_np[i]) if gv_np is not None else '',
+                             float(ed_np[i]) if ed_np is not None else ''])
 
-    # Save gate_delta_stats CSV
-    with open(os.path.join(out_dir, 'gate_delta_stats.csv'), 'w', newline='') as f:
-        w = csv.writer(f)
-        w.writerow(['stat', 'gate_reg', 'effective_delta_reg'])
-        stats = [
-            ('mean', gv_np.mean(), ed_np.mean()),
-            ('std', gv_np.std(), ed_np.std()),
-            ('min', gv_np.min(), ed_np.min()),
-            ('max', gv_np.max(), ed_np.max()),
-            ('p5', np.percentile(gv_np, 5), np.percentile(ed_np, 5)),
-            ('p25', np.percentile(gv_np, 25), np.percentile(ed_np, 25)),
-            ('p50', np.percentile(gv_np, 50), np.percentile(ed_np, 50)),
-            ('p75', np.percentile(gv_np, 75), np.percentile(ed_np, 75)),
-            ('p95', np.percentile(gv_np, 95), np.percentile(ed_np, 95)),
-        ]
-        for name, g, d in stats:
-            w.writerow([name, f'{g:.6f}', f'{d:.6f}'])
-
-    # Save plots
-    save_plots(out_dir,
-               metrics_epoch['epoch'],
-               metrics_epoch,
-               rb_np, rp_np, tg_np, aw_np, gv_np, ed_np)
+    # Save plots (only when data available)
+    if rb_np is not None:
+        save_plots(out_dir, metrics_epoch['epoch'], metrics_epoch,
+                   rb_np, rp_np, tg_np,
+                   aw_np if aw_np is not None else np.zeros((len(tg_np), 3)),
+                   gv_np if gv_np is not None else np.zeros(len(tg_np)),
+                   ed_np if ed_np is not None else np.zeros(len(tg_np)))
 
     print(f'\n[DONE] All outputs saved to {out_dir}')
 

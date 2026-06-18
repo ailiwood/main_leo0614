@@ -1,0 +1,23 @@
+# P6I: MOSI Vision-Only signal check
+model:
+  mode: "vision_only"
+  hidden_dim: 256
+  vision_dim: 768
+  slstm_num_layers: 1
+  slstm_dropout: 0.2
+
+training:
+  seed: 42
+  epochs: 30
+  batch_size: 4
+  grad_accum_steps: 4
+  lr: 3.0e-5
+  weight_decay: 0.03
+  early_stopping_patience: 6
+  test_eval: false
+  test_final_once: false
+  val_only: true
+
+output:
+  root: "outputs/P6I"
+  exp_name: "vision_only"

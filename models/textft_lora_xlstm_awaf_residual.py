@@ -1,21 +1,18 @@
 """
-models/textft_lora_xlstm_awaf_residual.py — P6H-R TextFT LoRA xLSTM AWAF Residual 主模型
+models/textft_lora_xlstm_awaf_residual.py — P6I TextFT LoRA xLSTM AWAF Residual 主模型
 
-完整三模态主模型: RoBERTa-large + Minimal LoRA + sLSTM + AWAF + UGR + Delta Residual
-
-P6H-R 修复开关 (均通过 config 控制):
-  use_modal_layernorm   : AWAF 前各模态独立 LayerNorm (防权重崩溃)
-  tau_init              : AWAF 温度 (默认 3.0, 原 1.0)
-  awaf_uniform_mix      : 权重均匀混合 ε (默认 0.0)
-  lambda_awaf_entropy   : AWAF entropy regularization (默认 0.0)
-  delta_scale_init      : Delta 修正幅度 (默认 0.2, 原 0.02)
-  max_delta             : Delta 上限 (默认 0.5)
-  gate_init_bias        : Gate 最后一层 bias (默认 +2.0, 原 -1.5)
+P6I 新增:
+  - mode: text_only / audio_only / vision_only / av_only /
+          text_audio_residual / text_vision_residual / text_av_residual /
+          text_confidence_residual
+  - TextConfidenceResidualHead: text-confidence conditioned residual
+  - text_base 梯度保护 (detach for residual branch)
+  - 三阶段训练支持
 """
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass, field
 
 from .modules.minimal_lora import apply_lora_to_roberta, mark_only_lora_as_trainable
@@ -23,14 +20,23 @@ from .encoders.slstm import SLSTMEncoder
 from .pooling.attention_pooling import MaskedAttentionPooling
 from .fusion.awaf import AdaptiveWeightedAttentionFusion
 from .modules.uncertainty_residual_gate import UncertaintyGuidedResidualGate
+from .modules.text_confidence_residual import (
+    TextConfidenceResidualHead,
+    TextConfidenceResidualConfig,
+)
 
 
 @dataclass
 class TextFTLoRAConfig:
-    """P6H-R 主模型配置。"""
+    """P6I 主模型配置。"""
+    # --- Mode (P6I) ---
+    mode: str = "text_av_residual"  # text_only|audio_only|vision_only|av_only|
+                                     # text_audio_residual|text_vision_residual|
+                                     # text_av_residual|text_confidence_residual
+
     # --- Text ---
     text_model_name: str = "roberta-large"
-    text_hidden_dim: int = 1024          # RoBERTa-large hidden
+    text_hidden_dim: int = 1024
     text_mlp_hidden: int = 512
     text_dropout: float = 0.1
 
@@ -41,7 +47,7 @@ class TextFTLoRAConfig:
     lora_targets: Tuple[str, ...] = ('query', 'value')
 
     # --- Common ---
-    hidden_dim: int = 256                # 统一投影维度 H
+    hidden_dim: int = 256
     audio_input_dim: int = 768
     vision_input_dim: int = 768
 
@@ -52,46 +58,67 @@ class TextFTLoRAConfig:
 
     # --- AWAF ---
     awaf_fusion_mode: str = "awaf"
-    tau_init: float = 3.0                # [P6H-R] 原 1.0
+    tau_init: float = 3.0
     awaf_dropout: float = 0.1
     use_modality_dropout: bool = True
     modality_dropout_prob: float = 0.1
-    use_modal_layernorm: bool = True     # [P6H-R]
-    awaf_uniform_mix: float = 0.0        # [P6H-R]
-    lambda_awaf_entropy: float = 0.0     # [P6H-R]
+    use_modal_layernorm: bool = True
+    awaf_uniform_mix: float = 0.0
+    lambda_awaf_entropy: float = 0.01
 
-    # --- Gate ---
-    use_uncertainty_gate: bool = True
+    # --- Gate (old UGR, kept for backward compat) ---
+    use_uncertainty_gate: bool = False   # P6I: default off, use text_confidence_residual instead
     gate_hidden_dim: int = 128
     gate_dropout: float = 0.1
-    gate_init_bias: float = 2.0          # [P6H-R] 原 -1.5
-    gate_margin_init: float = 0.75
-    gate_temperature_init: float = 0.35
+    gate_init_bias: float = 2.0
 
-    # --- Delta ---
-    use_delta_experts: bool = True
+    # --- Delta (old, kept for backward compat) ---
+    use_delta_experts: bool = False      # P6I: default off
     use_bounded_delta: bool = True
-    max_delta: float = 0.5
-    delta_scale_init: float = 0.2        # [P6H-R] 原 0.02
+    max_delta: float = 1.0
+    delta_scale_init: float = 0.2
+
+    # --- Text-Confidence Residual (P6I) ---
+    use_text_conf_residual: bool = False
+    tcr_gate_hidden_dim: int = 128
+    tcr_delta_hidden_dim: int = 128
+    tcr_dropout: float = 0.1
+    tcr_max_delta: float = 1.0
+    tcr_gate_floor: float = 0.2
+    tcr_detach_text_for_residual: bool = True
+    delta_loss_weight: float = 1.0
 
     # --- Training hints ---
     device: str = "cuda"
+    freeze_text_base: bool = False       # P6I: freeze text params for residual-only stage
+
+    @property
+    def needs_text(self) -> bool:
+        return self.mode not in ('audio_only', 'vision_only', 'av_only')
+
+    @property
+    def needs_audio_branch(self) -> bool:
+        return self.mode not in ('text_only', 'vision_only')
+
+    @property
+    def needs_vision_branch(self) -> bool:
+        return self.mode not in ('text_only', 'audio_only')
+
+    @property
+    def needs_awaf(self) -> bool:
+        return self.mode in ('text_av_residual', 'text_confidence_residual', 'av_only')
+
+    @property
+    def needs_text_conf_residual(self) -> bool:
+        return self.mode == 'text_confidence_residual'
+
+    @property
+    def is_text_only(self) -> bool:
+        return self.mode == 'text_only'
 
 
 class TextFTLoRAXLSTMAWAFResidual(nn.Module):
-    """
-    P6H-R 完整三模态主模型。
-
-    数据流:
-      Text:   RoBERTa-large + LoRA → CLS → TextMLP → h_t
-      Audio:  Frozen 768d → Linear(768,H) → sLSTM → MaskedAttnPool → h_a
-      Vision: Frozen 768d → Linear(768,H) → sLSTM → MaskedAttnPool → h_v
-      Fusion: AWAF(h_t,h_a,h_v) → Z + weights
-      Delta:  per-modality delta experts → bounded_delta
-      Gate:   UGR(h_t, Z, ...) → gate_reg, gate_cls
-      Output: reg = text_base_reg + gate_reg * dsr * delta_reg
-              cls = text_base_cls + gate_cls * dsc * delta_cls
-    """
+    """P6I 多模态主模型 (支持 8 种训练模式)。"""
 
     def __init__(self, config: TextFTLoRAConfig):
         super().__init__()
@@ -101,273 +128,373 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         DEVICE = config.device
 
         # ============================================================
-        # 1. RoBERTa + Minimal LoRA
+        # 1. RoBERTa + Minimal LoRA (仅 text 模式需要)
         # ============================================================
-        from transformers import AutoModel
-        self.roberta = AutoModel.from_pretrained(config.text_model_name)
-        self.roberta = apply_lora_to_roberta(
-            self.roberta,
-            r=config.lora_r,
-            alpha=config.lora_alpha,
-            dropout=config.lora_dropout,
-            target_patterns=list(config.lora_targets),
-        )
-        mark_only_lora_as_trainable(self.roberta)
+        if config.needs_text:
+            from transformers import AutoModel
+            self.roberta = AutoModel.from_pretrained(config.text_model_name)
+            self.roberta = apply_lora_to_roberta(
+                self.roberta, r=config.lora_r, alpha=config.lora_alpha,
+                dropout=config.lora_dropout, target_patterns=list(config.lora_targets),
+            )
+            mark_only_lora_as_trainable(self.roberta)
+
+            self.text_mlp = nn.Sequential(
+                nn.Linear(D, config.text_mlp_hidden), nn.LayerNorm(config.text_mlp_hidden),
+                nn.GELU(), nn.Dropout(config.text_dropout),
+                nn.Linear(config.text_mlp_hidden, H), nn.LayerNorm(H),
+                nn.GELU(), nn.Dropout(config.text_dropout),
+            )
+            self.reg_head_text = nn.Linear(H, 1)
+            self.cls_head_text = nn.Linear(H, 1)
 
         # ============================================================
-        # 2. Text MLP: RoBERTa CLS (1024d) → 512 → 256
+        # 2. Audio branch
         # ============================================================
-        self.text_mlp = nn.Sequential(
-            nn.Linear(D, config.text_mlp_hidden),
-            nn.LayerNorm(config.text_mlp_hidden),
-            nn.GELU(),
-            nn.Dropout(config.text_dropout),
-            nn.Linear(config.text_mlp_hidden, H),
-            nn.LayerNorm(H),
-            nn.GELU(),
-            nn.Dropout(config.text_dropout),
-        )
-        self.reg_head_text = nn.Linear(H, 1)  # text_base regression
-        self.cls_head_text = nn.Linear(H, 1)  # text_base classification proxy
+        if config.needs_audio_branch:
+            self.audio_proj = nn.Sequential(
+                nn.Linear(config.audio_input_dim, H), nn.LayerNorm(H),
+                nn.GELU(), nn.Dropout(config.slstm_dropout),
+            )
+            self.audio_slstm = SLSTMEncoder(
+                H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
+                bidirectional=config.slstm_bidirectional, pooling='masked_mean',
+            )
+            self.audio_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
 
         # ============================================================
-        # 3. Audio branch (frozen 768d features → sLSTM)
+        # 3. Vision branch
         # ============================================================
-        self.audio_proj = nn.Sequential(
-            nn.Linear(config.audio_input_dim, H),
-            nn.LayerNorm(H),
-            nn.GELU(),
-            nn.Dropout(config.slstm_dropout),
-        )
-        self.audio_slstm = SLSTMEncoder(
-            H, H, config.slstm_num_layers,
-            dropout=config.slstm_dropout,
-            bidirectional=config.slstm_bidirectional,
-            pooling='masked_mean',
-        )
-        self.audio_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
+        if config.needs_vision_branch:
+            self.vision_proj = nn.Sequential(
+                nn.Linear(config.vision_input_dim, H), nn.LayerNorm(H),
+                nn.GELU(), nn.Dropout(config.slstm_dropout),
+            )
+            self.vision_slstm = SLSTMEncoder(
+                H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
+                bidirectional=config.slstm_bidirectional, pooling='masked_mean',
+            )
+            self.vision_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
 
         # ============================================================
-        # 4. Vision branch (frozen 768d features → sLSTM)
+        # 4. AV-only reg head (for audio_only/vision_only/av_only)
         # ============================================================
-        self.vision_proj = nn.Sequential(
-            nn.Linear(config.vision_input_dim, H),
-            nn.LayerNorm(H),
-            nn.GELU(),
-            nn.Dropout(config.slstm_dropout),
-        )
-        self.vision_slstm = SLSTMEncoder(
-            H, H, config.slstm_num_layers,
-            dropout=config.slstm_dropout,
-            bidirectional=config.slstm_bidirectional,
-            pooling='masked_mean',
-        )
-        self.vision_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
+        if not config.needs_text:
+            self.av_reg_head = nn.Sequential(
+                nn.Linear(H, H // 2), nn.LayerNorm(H // 2), nn.GELU(),
+                nn.Dropout(0.2), nn.Linear(H // 2, 1),
+            )
 
         # ============================================================
-        # 5. AWAF (with P6H-R repair switches)
+        # 5. AWAF
         # ============================================================
-        self.awaf = AdaptiveWeightedAttentionFusion(
-            hidden_dim=H,
-            fusion_mode=config.awaf_fusion_mode,
-            tau_init=config.tau_init,
-            dropout=config.awaf_dropout,
-            use_modality_dropout=config.use_modality_dropout,
-            modality_dropout_prob=config.modality_dropout_prob,
-            use_modal_layernorm=config.use_modal_layernorm,
-            awaf_uniform_mix=config.awaf_uniform_mix,
-            return_diagnostics=True,
-        )
+        if config.needs_awaf:
+            self.awaf = AdaptiveWeightedAttentionFusion(
+                hidden_dim=H, fusion_mode=config.awaf_fusion_mode,
+                tau_init=config.tau_init, dropout=config.awaf_dropout,
+                use_modality_dropout=config.use_modality_dropout,
+                modality_dropout_prob=config.modality_dropout_prob,
+                use_modal_layernorm=config.use_modal_layernorm,
+                awaf_uniform_mix=config.awaf_uniform_mix,
+                return_diagnostics=True,
+            )
 
         # ============================================================
-        # 6. Uncertainty-Guided Residual Gate
+        # 6. Old UGR Gate (backward compat)
         # ============================================================
         self.use_gate = config.use_uncertainty_gate
         if self.use_gate:
             self.gate = UncertaintyGuidedResidualGate(
-                hidden_dim=H,
-                gate_hidden_dim=config.gate_hidden_dim,
-                dropout=config.gate_dropout,
-                init_bias=config.gate_init_bias,
-                margin_init=config.gate_margin_init,
-                prior_temperature_init=config.gate_temperature_init,
+                hidden_dim=H, gate_hidden_dim=config.gate_hidden_dim,
+                dropout=config.gate_dropout, init_bias=config.gate_init_bias,
             )
 
         # ============================================================
-        # 7. Delta experts (per-modality, configurable scale)
+        # 7. Old Delta experts (backward compat)
         # ============================================================
         self.use_delta = config.use_delta_experts
         if self.use_delta:
-            def _make_delta_expert():
+            def _make_de():
                 return nn.Sequential(
-                    nn.Linear(H, H // 2),
-                    nn.LayerNorm(H // 2),
-                    nn.GELU(),
-                    nn.Dropout(0.2),
-                    nn.Linear(H // 2, 1),
+                    nn.Linear(H, H // 2), nn.LayerNorm(H // 2), nn.GELU(),
+                    nn.Dropout(0.2), nn.Linear(H // 2, 1),
                 )
-            self.delta_reg_t = _make_delta_expert()
-            self.delta_reg_a = _make_delta_expert()
-            self.delta_reg_v = _make_delta_expert()
-            self.delta_cls_t = _make_delta_expert()
-            self.delta_cls_a = _make_delta_expert()
-            self.delta_cls_v = _make_delta_expert()
-
-            # [P6H-R] Delta scale: configurable, learnable
+            self.delta_reg_t = _make_de(); self.delta_reg_a = _make_de()
+            self.delta_reg_v = _make_de()
             self.delta_scale_reg = nn.Parameter(torch.tensor(config.delta_scale_init))
             self.delta_scale_cls = nn.Parameter(torch.tensor(config.delta_scale_init))
 
-            self.max_delta = config.max_delta
-            self.use_bounded_delta = config.use_bounded_delta
+        # ============================================================
+        # 8. Text-Confidence Residual Head (P6I)
+        # ============================================================
+        self.use_tcr = config.use_text_conf_residual
+        if self.use_tcr:
+            tcr_cfg = TextConfidenceResidualConfig(
+                hidden_dim=H,
+                gate_hidden_dim=config.tcr_gate_hidden_dim,
+                delta_hidden_dim=config.tcr_delta_hidden_dim,
+                dropout=config.tcr_dropout,
+                max_delta=config.tcr_max_delta,
+                gate_floor=config.tcr_gate_floor,
+                detach_text_for_residual=config.tcr_detach_text_for_residual,
+                use_av_interaction=True,
+            )
+            self.text_conf_residual = TextConfidenceResidualHead(tcr_cfg)
+
+        # Freeze text if requested
+        if config.freeze_text_base and config.needs_text:
+            self._set_text_trainable(False)
+
+    def _set_text_trainable(self, trainable: bool):
+        """冻结/解冻 text branch 参数。"""
+        for p in self.roberta.parameters():
+            p.requires_grad = trainable
+        for p in self.text_mlp.parameters():
+            p.requires_grad = trainable
+        for p in self.reg_head_text.parameters():
+            p.requires_grad = trainable
+        for p in self.cls_head_text.parameters():
+            p.requires_grad = trainable
+
+    def _compute_text(self, ids, am):
+        """Compute text features and predictions."""
+        ro = self.roberta(input_ids=ids, attention_mask=am)
+        ht = ro.last_hidden_state[:, 0, :]  # [B, 1024]
+        ht = self.text_mlp(ht)              # [B, H]
+        rtb = self.reg_head_text(ht)        # [B, 1]
+        ctb = self.cls_head_text(ht)        # [B, 1]
+        return ht, rtb, ctb
+
+    def _compute_audio(self, a, am_a):
+        ha = self.audio_proj(a)
+        hao = self.audio_slstm(ha, am_a)
+        hap, _ = self.audio_pool(hao['H'], am_a)
+        return hap
+
+    def _compute_vision(self, v, vm_v):
+        hv = self.vision_proj(v)
+        hvo = self.vision_slstm(hv, vm_v)
+        hvp, _ = self.vision_pool(hvo['H'], vm_v)
+        return hvp
 
     # ================================================================
     # Forward
     # ================================================================
     def forward(self, batch: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        """
-        Args:
-            batch: dict with keys:
-                input_ids, attention_mask: text tokens [B, T_text]
-                audio, audio_mask: audio features [B, T_audio, 768]
-                vision, vision_mask: vision features [B, T_vision, 768]
-                label: ground truth [B, 1] (optional)
-
-        Returns:
-            dict with:
-                reg: final regression prediction [B, 1]
-                cls: final classification proxy [B, 1]
-                reg_text_base: text-only regression [B, 1]
-                cls_text_base: text-only classification [B, 1]
-                awaf_weights: [B, 3] (w_t, w_a, w_v)
-                awaf_Z: AWAF fusion vector [B, H]
-                awaf_diagnostics: dict with entropy, tau, l2 norms
-                gate_reg, gate_cls: gate values [B, 1]
-                delta_reg: raw delta [B, 1]
-                effective_delta_reg: gated delta [B, 1]
-        """
+        mode = self.config.mode
         DEVICE = self.config.device
-        ids = batch['input_ids'].to(DEVICE)
-        am = batch['attention_mask'].to(DEVICE)
-        a = batch['audio'].to(DEVICE)
-        am_a = batch['audio_mask'].to(DEVICE)
-        v = batch['vision'].to(DEVICE)
-        vm_v = batch['vision_mask'].to(DEVICE)
+        lbl = batch.get('label')
+        if lbl is not None:
+            lbl = lbl.to(DEVICE)
 
-        # --- Text: RoBERTa + MLP ---
-        ro = self.roberta(input_ids=ids, attention_mask=am)
-        ht = ro.last_hidden_state[:, 0, :]  # CLS token [B, 1024]
-        ht = self.text_mlp(ht)              # [B, H]
-        rtb = self.reg_head_text(ht)        # [B, 1] text_base regression
-        ctb = self.cls_head_text(ht)        # [B, 1] text_base classification
+        # === Text branch ===
+        ht, rtb, ctb = None, None, None
+        if self.config.needs_text:
+            ids = batch['input_ids'].to(DEVICE)
+            am = batch['attention_mask'].to(DEVICE)
+            ht, rtb, ctb = self._compute_text(ids, am)
 
-        # --- Audio: projection → sLSTM → pool ---
-        ha = self.audio_proj(a)                       # [B, T_a, H]
-        hao = self.audio_slstm(ha, am_a)              # dict with 'H': [B, T_a, H]
-        hap, _ = self.audio_pool(hao['H'], am_a)      # [B, H]
+        # === Audio branch ===
+        hap = None
+        if self.config.needs_audio_branch:
+            a = batch['audio'].to(DEVICE)
+            am_a = batch['audio_mask'].to(DEVICE)
+            hap = self._compute_audio(a, am_a)
 
-        # --- Vision: projection → sLSTM → pool ---
-        hv = self.vision_proj(v)                       # [B, T_v, H]
-        hvo = self.vision_slstm(hv, vm_v)              # dict with 'H': [B, T_v, H]
-        hvp, _ = self.vision_pool(hvo['H'], vm_v)      # [B, H]
+        # === Vision branch ===
+        hvp = None
+        if self.config.needs_vision_branch:
+            v = batch['vision'].to(DEVICE)
+            vm_v = batch['vision_mask'].to(DEVICE)
+            hvp = self._compute_vision(v, vm_v)
 
-        # --- AWAF fusion ---
-        aw = self.awaf(ht, hap, hvp)                   # dict: 'Z', 'weights', 'diagnostics'
-        z = aw['Z']                                    # [B, H]
-        w = aw['weights']                              # [B, 3]
-        awaf_diag = aw.get('diagnostics', {})          # entropy, tau, l2 norms
+        # === Mode-specific forward ===
+        if mode == 'text_only':
+            return self._forward_text_only(ht, rtb, ctb, lbl)
+        elif mode == 'audio_only':
+            return self._forward_audio_only(hap, lbl)
+        elif mode == 'vision_only':
+            return self._forward_vision_only(hvp, lbl)
+        elif mode == 'av_only':
+            return self._forward_av_only(ht, hap, hvp, lbl)
+        elif mode == 'text_audio_residual':
+            return self._forward_text_x_residual(ht, rtb, ctb, hap, None, 'audio', lbl)
+        elif mode == 'text_vision_residual':
+            return self._forward_text_x_residual(ht, rtb, ctb, None, hvp, 'vision', lbl)
+        elif mode == 'text_av_residual':
+            return self._forward_text_av_residual(ht, rtb, ctb, hap, hvp, lbl)
+        elif mode == 'text_confidence_residual':
+            return self._forward_text_conf_residual(ht, rtb, ctb, hap, hvp, lbl)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
 
-        # --- Delta experts ---
+    # ================================================================
+    # Mode-specific forward implementations
+    # ================================================================
+    def _forward_text_only(self, ht, rtb, ctb, lbl):
+        return {
+            'reg': rtb, 'cls': ctb,
+            'reg_text_base': rtb, 'cls_text_base': ctb,
+        }
+
+    def _forward_audio_only(self, hap, lbl):
+        reg = self.av_reg_head(hap)
+        return {'reg': reg, 'reg_text_base': reg}
+
+    def _forward_vision_only(self, hvp, lbl):
+        reg = self.av_reg_head(hvp)
+        return {'reg': reg, 'reg_text_base': reg}
+
+    def _forward_av_only(self, ht, hap, hvp, lbl):
+        # AWAF with dummy text (zeros) or just audio+vision
+        aw = self.awaf(
+            torch.zeros_like(hap) if ht is None else ht.detach() if not self.config.needs_text else ht,
+            hap, hvp)
+        z = aw['Z']
+        reg = self.av_reg_head(z)
+        return {'reg': reg, 'reg_text_base': reg, 'awaf_weights': aw['weights']}
+
+    def _forward_text_x_residual(self, ht, rtb, ctb, hap, hvp, which, lbl):
+        """Text + single modality residual (old gate+delta path)."""
+        # Use AWAF or simple mean for the available A/V
+        if which == 'audio':
+            z = hap  # [B, H]
+        elif which == 'vision':
+            z = hvp
+        else:
+            z = (hap + hvp) / 2.0
+
+        # Delta from the available modality
         if self.use_delta:
-            # Regression delta
-            dr_t = self.delta_reg_t(ht)   # [B, 1]
-            dr_a = self.delta_reg_a(hap)  # [B, 1]
-            dr_v = self.delta_reg_v(hvp)  # [B, 1]
-            dr = w[:, 0:1] * dr_t + w[:, 1:2] * dr_a + w[:, 2:3] * dr_v  # weighted sum [B, 1]
-
-            # Classification delta
-            dc_t = self.delta_cls_t(ht)
-            dc_a = self.delta_cls_a(hap)
-            dc_v = self.delta_cls_v(hvp)
-            dc = w[:, 0:1] * dc_t + w[:, 1:2] * dc_a + w[:, 2:3] * dc_v
-
-            # Bounded delta
-            if self.use_bounded_delta:
-                bdr = self.max_delta * torch.tanh(dr)
-                bdc = self.max_delta * torch.tanh(dc)
+            if which == 'audio':
+                dr = self.delta_reg_a(hap)
+            elif which == 'vision':
+                dr = self.delta_reg_v(hvp)
             else:
-                bdr = dr
-                bdc = dc
-
+                dr = (self.delta_reg_a(hap) + self.delta_reg_v(hvp)) / 2.0
+            bdr = self.config.max_delta * torch.tanh(dr) if self.config.use_bounded_delta else dr
             dsr = self.delta_scale_reg
-            dsc = self.delta_scale_cls
         else:
             bdr = torch.zeros_like(rtb)
-            bdc = torch.zeros_like(ctb)
-            dsr = torch.tensor(0.0, device=DEVICE)
-            dsc = torch.tensor(0.0, device=DEVICE)
-            dr = bdr
+            dsr = torch.tensor(0.0, device=rtb.device)
 
-        # --- Uncertainty gate ---
+        # Gate
         if self.use_gate:
-            go = self.gate(ht, z, rtb, ctb, w, dr)
-            gr = go['gate_reg']     # [B, 1]
-            gc = go['gate_cls']     # [B, 1]
+            dummy_aw = torch.zeros(ht.size(0), 3, device=ht.device)  # avoid dim mismatch
+            go = self.gate(ht, z, rtb, ctb, dummy_aw, dr if self.use_delta else None)
+            gr = go['gate_reg']
         else:
             gr = torch.ones_like(rtb)
-            gc = torch.ones_like(ctb)
 
-        # --- Final prediction ---
-        edr = gr * dsr * bdr       # effective delta regression
-        edc = gc * dsc * bdc       # effective delta classification
+        edr = gr * dsr * bdr
         reg = rtb + edr
-        cls = ctb + edc
 
         return {
-            'reg': reg,
-            'cls': cls,
+            'reg': reg, 'reg_text_base': rtb, 'cls_text_base': ctb,
+            'gate_reg': gr, 'delta_reg': dr, 'effective_delta_reg': edr,
+            'delta_scale_reg': dsr,
+        }
+
+    def _forward_text_av_residual(self, ht, rtb, ctb, hap, hvp, lbl):
+        """Text + AV residual (old gate+delta path with AWAF)."""
+        aw = self.awaf(ht, hap, hvp)
+        z = aw['Z']; w = aw['weights']
+
+        if self.use_delta:
+            dr_t = self.delta_reg_t(ht); dr_a = self.delta_reg_a(hap); dr_v = self.delta_reg_v(hvp)
+            dr = w[:, 0:1] * dr_t + w[:, 1:2] * dr_a + w[:, 2:3] * dr_v
+            bdr = self.config.max_delta * torch.tanh(dr) if self.config.use_bounded_delta else dr
+            dsr = self.delta_scale_reg
+        else:
+            bdr = torch.zeros_like(rtb)
+            dsr = torch.tensor(0.0, device=rtb.device)
+            dr = bdr
+
+        if self.use_gate:
+            go = self.gate(ht, z, rtb, ctb, w, dr)
+            gr = go['gate_reg']
+        else:
+            gr = torch.ones_like(rtb)
+
+        edr = gr * dsr * bdr
+        reg = rtb + edr
+
+        return {
+            'reg': reg, 'reg_text_base': rtb, 'cls_text_base': ctb,
+            'awaf_weights': w, 'awaf_Z': z,
+            'awaf_diagnostics': aw.get('diagnostics', {}),
+            'gate_reg': gr, 'delta_reg': dr, 'effective_delta_reg': edr,
+            'delta_scale_reg': dsr,
+        }
+
+    def _forward_text_conf_residual(self, ht, rtb, ctb, hap, hvp, lbl):
+        """Text-confidence conditioned residual (P6I new architecture)."""
+        # AWAF for AV fusion
+        aw = self.awaf(ht, hap, hvp)
+        z_av = aw['Z']; w = aw['weights']
+
+        # Text-confidence residual
+        tcr_out = self.text_conf_residual(
+            h_t=ht, h_a=hap, h_v=hvp, z_av=z_av,
+            reg_text_base=rtb, cls_text_base=ctb, label=lbl,
+        )
+
+        return {
+            'reg': tcr_out['reg_final'],
             'reg_text_base': rtb,
             'cls_text_base': ctb,
-            'awaf_weights': w,
-            'awaf_Z': z,
-            'awaf_diagnostics': awaf_diag,
-            'gate_reg': gr if self.use_gate else torch.ones_like(rtb),
-            'gate_cls': gc if self.use_gate else torch.ones_like(ctb),
-            'delta_reg': dr,
-            'bounded_delta_reg': bdr,
-            'effective_delta_reg': edr,
-            'delta_scale_reg': dsr,
+            'awaf_weights': w, 'awaf_Z': z_av,
+            'awaf_diagnostics': aw.get('diagnostics', {}),
+            'delta': tcr_out['delta'],
+            'gate': tcr_out['gate'],
+            'text_confidence': tcr_out['text_confidence'],
+            'text_uncertainty': tcr_out['text_uncertainty'],
+            'target_delta': tcr_out.get('target_delta'),
+            'delta_loss': tcr_out.get('delta_loss'),
+            'effective_delta_reg': tcr_out['gate'] * tcr_out['delta'],
         }
 
     # ================================================================
     # Helpers
     # ================================================================
-    def collect_trainable_params(self):
-        """收集所有可训练参数 (用于 optimizer)。"""
+    def collect_trainable_params(self, stage: str = 'all') -> List[nn.Parameter]:
+        """收集可训练参数，支持分阶段。
+
+        Args:
+            stage: 'all' | 'text_only' | 'residual_only'
+        """
         params = []
-        # RoBERTa + LoRA
-        params += list(self.roberta.parameters())
-        # Text
-        params += list(self.text_mlp.parameters())
-        params += list(self.reg_head_text.parameters())
-        params += list(self.cls_head_text.parameters())
-        # Audio/Vision branches
-        for m in [self.audio_proj, self.audio_slstm, self.audio_pool,
-                  self.vision_proj, self.vision_slstm, self.vision_pool,
-                  self.awaf]:
-            params += list(m.parameters())
-        # Gate
-        if self.use_gate:
-            params += list(self.gate.parameters())
-        # Delta
-        if self.use_delta:
-            for m in [self.delta_reg_t, self.delta_reg_a, self.delta_reg_v,
-                      self.delta_cls_t, self.delta_cls_a, self.delta_cls_v]:
-                params += list(m.parameters())
-            params += [self.delta_scale_reg, self.delta_scale_cls]
+
+        if stage in ('all', 'text_only'):
+            if self.config.needs_text:
+                params += list(self.roberta.parameters())
+                params += list(self.text_mlp.parameters())
+                params += list(self.reg_head_text.parameters())
+                params += list(self.cls_head_text.parameters())
+
+        if stage in ('all', 'residual_only'):
+            if self.config.needs_audio_branch:
+                for m in [self.audio_proj, self.audio_slstm, self.audio_pool]:
+                    params += list(m.parameters())
+            if self.config.needs_vision_branch:
+                for m in [self.vision_proj, self.vision_slstm, self.vision_pool]:
+                    params += list(m.parameters())
+            if self.config.needs_awaf:
+                params += list(self.awaf.parameters())
+            if self.use_delta:
+                for m in [self.delta_reg_t, self.delta_reg_a, self.delta_reg_v]:
+                    params += list(m.parameters())
+                params += [self.delta_scale_reg, self.delta_scale_cls]
+            if self.use_gate:
+                params += list(self.gate.parameters())
+            if self.use_tcr:
+                params += list(self.text_conf_residual.parameters())
+            if not self.config.needs_text:
+                params += list(self.av_reg_head.parameters())
+
         return params
 
     def count_trainable(self) -> Dict[str, float]:
-        """统计可训练 / 总参数量 (M)。"""
         total = sum(p.numel() for p in self.parameters())
         trainable = sum(p.numel() for p in self.parameters() if p.requires_grad)
         return {'total_M': total / 1e6, 'trainable_M': trainable / 1e6}
