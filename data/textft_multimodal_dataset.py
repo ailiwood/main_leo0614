@@ -54,7 +54,7 @@ class TextFTMultimodalDataset(Dataset):
         elif self.formal_mode:
             raise FileNotFoundError(
                 f"TextFTMultimodalDataset formal_mode: missing feature file for "
-                f"sample_id={sample_id}, split={split}, path={feat_path}. "
+                f"sample_id={sample_id}, path={feat_path}. "
                 f"Cannot use zero fallback in formal experiments."
             )
         else:
