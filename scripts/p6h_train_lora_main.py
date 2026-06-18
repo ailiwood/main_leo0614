@@ -25,9 +25,9 @@ tl=DataLoader(train_ds,BATCH,shuffle=True,collate_fn=collate_textft)
 vl=DataLoader(val_ds,BATCH,shuffle=False,collate_fn=collate_textft)
 tl_test=DataLoader(test_ds,BATCH,shuffle=False,collate_fn=collate_textft)
 
-# RoBERTa + Minimal LoRA
+# RoBERTa + Minimal LoRA (move to device BEFORE LoRA injection)
 print('Loading RoBERTa-large + Minimal LoRA...')
-roberta=AutoModel.from_pretrained('roberta-large')
+roberta=AutoModel.from_pretrained('roberta-large').to(DEVICE)
 roberta=apply_lora_to_roberta(roberta,r=16,alpha=32,target_patterns=['query','value'])
 mark_only_lora_as_trainable(roberta)
 tokenizer=AutoTokenizer.from_pretrained('roberta-large')

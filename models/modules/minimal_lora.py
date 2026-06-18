@@ -25,9 +25,10 @@ class LoRALinear(nn.Module):
         for p in base.parameters():
             p.requires_grad = False
 
+        device = base.weight.device
         in_f, out_f = base.in_features, base.out_features
-        self.lora_A = nn.Parameter(torch.randn(r, in_f) * 0.02)
-        self.lora_B = nn.Parameter(torch.zeros(out_f, r))
+        self.lora_A = nn.Parameter(torch.randn(r, in_f, device=device) * 0.02)
+        self.lora_B = nn.Parameter(torch.zeros(out_f, r, device=device))
         self.lora_dropout = nn.Dropout(dropout) if dropout > 0 else nn.Identity()
 
     def forward(self, x):
