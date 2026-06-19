@@ -15,6 +15,7 @@ MODEL_MAP = {
     'lmf_lite': 'models.baselines.lmf_lite.LMFLite',
     'mult_lite': 'models.baselines.mult_lite.MulTLite',
     'self_mm_lite': 'models.baselines.self_mm_lite.SelfMMLite',
+    'selfmm_lite': 'models.baselines.self_mm_lite.SelfMMLite',
 }
 
 
@@ -24,12 +25,24 @@ def import_model(name):
     return getattr(importlib.import_module(mod_path), cls_name)
 
 
-def evaluate(model, loader, device):
+def inject_text_feature(batch, roberta, device):
+    """Add RoBERTa CLS feature to batch for baseline models."""
+    if roberta is not None:
+        with torch.no_grad():
+            ids = batch['input_ids'].to(device)
+            am = batch['attention_mask'].to(device)
+            out = roberta(input_ids=ids, attention_mask=am)
+            batch['text_feature'] = out.last_hidden_state[:, 0, :]  # CLS [B, 1024]
+    return batch
+
+
+def evaluate(model, loader, device, roberta=None):
     """Return predictions, labels, and compute_all_metrics dict."""
     model.eval()
     preds, labels = [], []
     with torch.no_grad():
         for batch in loader:
+            batch = inject_text_feature(batch, roberta, device)
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             out = model(batch)
             preds.append(out['reg'].cpu())
@@ -85,10 +98,21 @@ def main():
     tlt = DataLoader(test_ds, BATCH, shuffle=False, collate_fn=collate_textft)
 
     # Model
+    use_pretrained_text = m.get('use_pretrained_text', False)
+    roberta = None
+    if use_pretrained_text:
+        from transformers import AutoModel
+        print('[MODEL] Loading RoBERTa-large for text features (frozen)...')
+        roberta = AutoModel.from_pretrained('roberta-large').to(DEVICE)
+        for p in roberta.parameters():
+            p.requires_grad = False
+        roberta.eval()
+        print('[MODEL] RoBERTa loaded, frozen.')
+
     model_cls = import_model(MODEL_NAME)
     model = model_cls({**m, 'modality_mode': MODE}).to(DEVICE)
     n_params = sum(p.numel() for p in model.parameters())
-    print(f'[MODEL] {MODEL_NAME} mode={MODE} params={n_params/1e6:.2f}M')
+    print(f'[MODEL] {MODEL_NAME} mode={MODE} params={n_params/1e6:.2f}M pretrained_text={use_pretrained_text}')
 
     if args.debug_shapes:
         batch = next(iter(tl))
@@ -127,6 +151,7 @@ def main():
         for i, batch in enumerate(tqdm(tl, desc=f'E{epoch}', leave=False)):
             if args.limit_batches and i >= args.limit_batches:
                 break
+            batch = inject_text_feature(batch, roberta, DEVICE)
             batch = {k: v.to(DEVICE) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             out = model(batch)
             lbl = batch['label'].squeeze(-1)
@@ -140,7 +165,7 @@ def main():
         avg_loss = total_loss / min(len(tl), args.limit_batches or len(tl))
 
         # Val
-        _, _, val_m = evaluate(model, vl, DEVICE)
+        _, _, val_m = evaluate(model, vl, DEVICE, roberta)
 
         # Record
         metrics_epoch['epoch'].append(epoch)
@@ -188,7 +213,7 @@ def main():
     # Test final once with best model
     if TEST_ONCE and best_state:
         model.load_state_dict(best_state)
-    test_preds, test_labels, test_m = evaluate(model, tlt, DEVICE)
+    test_preds, test_labels, test_m = evaluate(model, tlt, DEVICE, roberta)
 
     # Save predictions
     with open(os.path.join(out_dir, 'predictions_test.csv'), 'w', newline='') as f:

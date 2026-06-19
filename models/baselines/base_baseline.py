@@ -26,14 +26,21 @@ class BaseBaseline(nn.Module):
         super().__init__()
         self.config = config
         self.mode = config.get('modality_mode', 'text_audio_vision')
-        H = config.get('hidden_dim', 64)
+        H = config.get('hidden_dim', 128)
+        self.use_pretrained_text = config.get('use_pretrained_text', False)
+        TEXT_DIM = config.get('text_input_dim', 1024)  # RoBERTa-large hidden
 
-        # Lightweight text encoder (no RoBERTa)
+        # Text encoder
         if self._use_text:
-            vocab_size = config.get('vocab_size', 50265)  # roberta-large
-            self.text_embed = nn.Embedding(vocab_size, H, padding_idx=1)
-            self.text_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
-            self.text_proj = nn.Linear(H * 2, H)
+            if self.use_pretrained_text:
+                # Use precomputed/cached text feature (e.g. RoBERTa CLS)
+                self.text_proj = nn.Linear(TEXT_DIM, H)
+            else:
+                # Lightweight GRU encoder (fallback)
+                vocab_size = config.get('vocab_size', 50265)
+                self.text_embed = nn.Embedding(vocab_size, H, padding_idx=1)
+                self.text_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
+                self.text_proj = nn.Linear(H * 2, H)
 
         # Audio projection
         if self._use_audio:
@@ -64,12 +71,17 @@ class BaseBaseline(nn.Module):
         return sum([self._use_text, self._use_audio, self._use_vision])
 
     def _encode_text(self, batch):
-        """Text: embedding → GRU → masked mean pool → [B, H]"""
+        """Text → [B, H] pooled representation."""
+        if self.use_pretrained_text and 'text_feature' in batch:
+            # Use precomputed feature (e.g. RoBERTa CLS [B, 1024])
+            feat = batch['text_feature']
+            return self.text_proj(feat)  # [B, H]
+        # Fallback: GRU encoder
         ids = batch['input_ids']
         mask = batch['attention_mask']
-        emb = self.text_embed(ids)  # [B, 128, H]
-        out, _ = self.text_gru(emb)  # [B, 128, H*2]
-        ht = self.text_proj(out)  # [B, 128, H]
+        emb = self.text_embed(ids)
+        out, _ = self.text_gru(emb)
+        ht = self.text_proj(out)
         return self._masked_pool(ht, mask)
 
     def _encode_audio(self, batch):

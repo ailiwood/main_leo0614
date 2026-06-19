@@ -40,7 +40,11 @@ class MulTLite(BaseBaseline):
         )
 
     def _encode_text_seq(self, batch):
-        """Text → GRU → full sequence [B, T, H] (not pooled)"""
+        """Text → full sequence [B, T, H] (not pooled)"""
+        if self.use_pretrained_text and 'text_feature' in batch:
+            # Pretrained feature is pooled [B, 1024] → expand to sequence
+            feat = self.text_proj(batch['text_feature'])  # [B, H]
+            return feat.unsqueeze(1).expand(-1, 10, -1)  # [B, 10, H] pseudo-sequence
         emb = self.text_embed(batch['input_ids'])
         out, _ = self.text_gru(emb)
         return self.text_proj(out)  # [B, T, H]
