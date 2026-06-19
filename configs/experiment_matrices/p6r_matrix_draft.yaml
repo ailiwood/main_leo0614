@@ -1,0 +1,41 @@
+datasets:
+  mosi:
+    label_csv: data/mosi/label.csv
+    feature_root: data/features_strong_sequence_mosi_v3_T40
+  mosei:
+    label_csv: data/mosei/label.csv
+    feature_root: data/mosei/features
+
+models:
+  - name: text_audio_conservative
+    type: main
+    script: scripts/train_textft_lora_mainline.py
+    mosi_config: configs/experiments/p6k_conservative/mosi_text_audio_conservative_s42.yaml
+    mosei_config: configs/experiments/p6r_mosei_mainline/mosei_text_audio_conservative_s42.yaml
+    modality: text_audio
+
+  - name: mult_lite
+    type: baseline
+    script: scripts/train_baseline_lite.py
+    mosi_config: configs/experiments/p6r_baseline_80pass/mosi_mult_lite_text_audio_roberta_h256_s42.yaml
+    modality: text_audio
+
+  - name: tfn_lite
+    type: baseline
+    script: scripts/train_baseline_lite.py
+    mosi_config: configs/experiments/p6r_baseline_80pass/mosi_tfn_lite_text_audio_roberta_h256_s42.yaml
+    modality: text_audio
+
+  - name: lmf_lite
+    type: baseline
+    script: scripts/train_baseline_lite.py
+    mosi_config: configs/experiments/p6q_baseline_rescue/mosi_lmf_lite_text_audio_roberta_s42.yaml
+    modality: text_audio
+
+  - name: selfmm_lite
+    type: baseline
+    script: scripts/train_baseline_lite.py
+    mosi_config: configs/experiments/p6p_baseline_rescue/mosi_selfmm_lite_text_audio_roberta_s42.yaml
+    modality: text_audio
+
+seeds: [42, 2024]
