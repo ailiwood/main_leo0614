@@ -1,0 +1,12 @@
+{
+  "total": 20680,
+  "splits": {
+    "train": 14700,
+    "valid": 1759,
+    "test": 4221
+  },
+  "audio_dim": 74,
+  "max_audio_len": 100,
+  "split_version": "official",
+  "match_rate": 0.9074951728980165
+}

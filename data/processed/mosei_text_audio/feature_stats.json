@@ -1,0 +1,11 @@
+{
+  "total_segments": 3292,
+  "train": 2304,
+  "val": 494,
+  "test": 494,
+  "audio_dim": 74,
+  "text_dim": 300,
+  "split_source": "random_70_15_15",
+  "official_split": false,
+  "note": "CMU-MOSEI CSD subset, NOT official full MOSEI (22,856). Split is random, not official."
+}
