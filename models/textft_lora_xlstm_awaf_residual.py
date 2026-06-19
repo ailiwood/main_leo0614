@@ -88,6 +88,13 @@ class TextFTLoRAConfig:
     tcr_detach_text_for_residual: bool = True
     delta_loss_weight: float = 1.0
 
+    # --- P6V Ablation ---
+    fusion_type: str = "awaf"             # awaf | mean | concat | gated | fixed
+    awaf_context: bool = True             # AWAF跨模态上下文增强
+    awaf_interaction: bool = True         # AWAF二阶Hadamard交互项
+    temporal_encoder: str = "slstm"       # slstm | gru | lstm | none
+    fixed_fusion_weights: Tuple[float, float, float] = (0.5, 0.5, 0.0)  # text, audio, vision
+
     # --- Training hints ---
     device: str = "cuda"
     freeze_text_base: bool = False       # P6I: freeze text params for residual-only stage
@@ -106,7 +113,8 @@ class TextFTLoRAConfig:
 
     @property
     def needs_awaf(self) -> bool:
-        return self.mode in ('text_av_residual', 'text_confidence_residual', 'av_only')
+        # P6V: always create AWAF for multimodal modes (supports fusion_type ablation)
+        return self.mode in ('text_av_residual', 'text_confidence_residual', 'av_only', 'text_audio_residual')
 
     @property
     def needs_text_conf_residual(self) -> bool:
@@ -151,15 +159,25 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         # ============================================================
         # 2. Audio branch
         # ============================================================
+        self._temporal_encoder_type = getattr(config, 'temporal_encoder', 'slstm')
         if config.needs_audio_branch:
             self.audio_proj = nn.Sequential(
                 nn.Linear(config.audio_input_dim, H), nn.LayerNorm(H),
                 nn.GELU(), nn.Dropout(config.slstm_dropout),
             )
-            self.audio_slstm = SLSTMEncoder(
-                H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
-                bidirectional=config.slstm_bidirectional, pooling='masked_mean',
-            )
+            if self._temporal_encoder_type == 'slstm':
+                self.audio_temporal = SLSTMEncoder(
+                    H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
+                    bidirectional=config.slstm_bidirectional, pooling='masked_mean',
+                )
+            elif self._temporal_encoder_type == 'gru':
+                self.audio_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=True)
+                self.audio_temporal_proj = nn.Linear(H * 2, H)
+            elif self._temporal_encoder_type == 'lstm':
+                self.audio_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=True)
+                self.audio_temporal_proj = nn.Linear(H * 2, H)
+            else:  # none
+                self.audio_temporal = None
             self.audio_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
 
         # ============================================================
@@ -170,10 +188,19 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                 nn.Linear(config.vision_input_dim, H), nn.LayerNorm(H),
                 nn.GELU(), nn.Dropout(config.slstm_dropout),
             )
-            self.vision_slstm = SLSTMEncoder(
-                H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
-                bidirectional=config.slstm_bidirectional, pooling='masked_mean',
-            )
+            if self._temporal_encoder_type == 'slstm':
+                self.vision_temporal = SLSTMEncoder(
+                    H, H, config.slstm_num_layers, dropout=config.slstm_dropout,
+                    bidirectional=config.slstm_bidirectional, pooling='masked_mean',
+                )
+            elif self._temporal_encoder_type == 'gru':
+                self.vision_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=True)
+                self.vision_temporal_proj = nn.Linear(H * 2, H)
+            elif self._temporal_encoder_type == 'lstm':
+                self.vision_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=True)
+                self.vision_temporal_proj = nn.Linear(H * 2, H)
+            else:
+                self.vision_temporal = None
             self.vision_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
 
         # ============================================================
@@ -186,11 +213,29 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
             )
 
         # ============================================================
-        # 5. AWAF
+        # 5. AWAF (supports all fusion_type variants via fusion_mode)
         # ============================================================
         if config.needs_awaf:
+            # P6V: map fusion_type to awaf_fusion_mode
+            ft = getattr(config, 'fusion_type', 'awaf')
+            if ft == 'awaf':
+                fm = 'awaf'
+            elif ft == 'awaf_no_context':
+                fm = 'awaf_no_context'
+            elif ft == 'awaf_no_interaction':
+                fm = 'awaf_no_interaction'
+            elif ft == 'mean':
+                fm = 'mean'
+            elif ft == 'concat':
+                fm = 'concat'
+            elif ft == 'gated':
+                fm = 'gated'
+            elif ft == 'fixed':
+                fm = 'fixed'
+            else:
+                fm = config.awaf_fusion_mode  # fallback to config
             self.awaf = AdaptiveWeightedAttentionFusion(
-                hidden_dim=H, fusion_mode=config.awaf_fusion_mode,
+                hidden_dim=H, fusion_mode=fm,
                 tau_init=config.tau_init, dropout=config.awaf_dropout,
                 use_modality_dropout=config.use_modality_dropout,
                 modality_dropout_prob=config.modality_dropout_prob,
@@ -265,16 +310,43 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         ctb = self.cls_head_text(ht)        # [B, 1]
         return ht, rtb, ctb
 
+    def _apply_temporal(self, x, mask, temporal_module, has_proj=False):
+        """Apply temporal encoder (sLSTM/GRU/LSTM/none) to projected features."""
+        if temporal_module is None:  # none mode
+            return x.mean(dim=1)  # [B, T, H] -> [B, H]
+        if self._temporal_encoder_type == 'slstm':
+            out = temporal_module(x, mask)
+            return out['H'].mean(dim=1)  # mean pool over time
+        else:  # gru or lstm
+            out, _ = temporal_module(x)
+            # Use last step or mean
+            pooled = out.mean(dim=1)
+            if has_proj:
+                pooled = getattr(self, f'{temporal_module.__class__.__name__.lower()}_proj', lambda z: z)(pooled)
+            return pooled
+
     def _compute_audio(self, a, am_a):
         ha = self.audio_proj(a)
-        hao = self.audio_slstm(ha, am_a)
-        hap, _ = self.audio_pool(hao['H'], am_a)
+        if self.audio_temporal is None:  # no temporal
+            hap, _ = self.audio_pool(ha, am_a)
+        elif self._temporal_encoder_type == 'slstm':
+            hao = self.audio_temporal(ha, am_a)
+            hap, _ = self.audio_pool(hao['H'], am_a)
+        else:  # gru or lstm
+            out, _ = self.audio_temporal(ha)
+            hap, _ = self.audio_pool(out, am_a)
         return hap
 
     def _compute_vision(self, v, vm_v):
         hv = self.vision_proj(v)
-        hvo = self.vision_slstm(hv, vm_v)
-        hvp, _ = self.vision_pool(hvo['H'], vm_v)
+        if self.vision_temporal is None:
+            hvp, _ = self.vision_pool(hv, vm_v)
+        elif self._temporal_encoder_type == 'slstm':
+            hvo = self.vision_temporal(hv, vm_v)
+            hvp, _ = self.vision_pool(hvo['H'], vm_v)
+        else:
+            out, _ = self.vision_temporal(hv)
+            hvp, _ = self.vision_pool(out, vm_v)
         return hvp
 
     # ================================================================
@@ -357,14 +429,29 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         return {'reg': reg, 'reg_text_base': reg, 'awaf_weights': aw['weights']}
 
     def _forward_text_x_residual(self, ht, rtb, ctb, hap, hvp, which, lbl):
-        """Text + single modality residual (old gate+delta path)."""
-        # Use AWAF or simple mean for the available A/V
-        if which == 'audio':
-            z = hap  # [B, H]
-        elif which == 'vision':
-            z = hvp
+        """Text + single modality residual (P6V: supports AWAF fusion ablation)."""
+        # P6V: Use AWAF for fusion when available (supports all fusion_type variants)
+        if hasattr(self, 'awaf') and self.awaf is not None:
+            if which == 'audio':
+                # Use AWAF with dummy vision (zeros)
+                dummy_v = torch.zeros_like(hap)
+                aw = self.awaf(ht, hap, dummy_v)
+                z = aw['Z']
+            elif which == 'vision':
+                dummy_a = torch.zeros_like(hvp)
+                aw = self.awaf(ht, dummy_a, hvp)
+                z = aw['Z']
+            else:
+                aw = self.awaf(ht, hap, hvp)
+                z = aw['Z']
         else:
-            z = (hap + hvp) / 2.0
+            # Legacy: simple passthrough
+            if which == 'audio':
+                z = hap  # [B, H]
+            elif which == 'vision':
+                z = hvp
+            else:
+                z = (hap + hvp) / 2.0
 
         # Delta from the available modality
         if self.use_delta:
@@ -477,10 +564,10 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
 
         if stage in ('all', 'residual_only'):
             if self.config.needs_audio_branch:
-                for m in [self.audio_proj, self.audio_slstm, self.audio_pool]:
+                for m in [self.audio_proj, self.audio_temporal, self.audio_pool]:
                     params += list(m.parameters())
             if self.config.needs_vision_branch:
-                for m in [self.vision_proj, self.vision_slstm, self.vision_pool]:
+                for m in [self.vision_proj, self.vision_temporal, self.vision_pool]:
                     params += list(m.parameters())
             if self.config.needs_awaf:
                 params += list(self.awaf.parameters())

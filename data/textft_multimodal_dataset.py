@@ -19,8 +19,9 @@ class TextFTMultimodalDataset(Dataset):
         # Read labels and raw text
         with open(csv_path, 'r', encoding='utf-8') as f:
             rows = list(csv.DictReader(f))
-        split_map = {'train': 'train', 'val': 'valid', 'test': 'test'}
-        self.data = [r for r in rows if r.get('mode', 'train') == split_map.get(split, split)]
+        # Label CSV uses 'train'/'valid'/'test' for MOSEI, 'train'/'val'/'test' for MOSI
+        csv_split_map = {'train': 'train', 'val': 'valid', 'test': 'test'}
+        self.data = [r for r in rows if r.get('mode', 'train') == csv_split_map.get(split, split)]
 
         # Tokenizer for raw text
         try:
@@ -28,8 +29,14 @@ class TextFTMultimodalDataset(Dataset):
         except Exception:
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
 
-        # Feature directory (use mapped split name for path)
-        self.feat_dir = os.path.join(feature_root, split_map.get(split, split))
+        # Feature directory: try 'valid' first (MOSEI), then 'val' (MOSI), then split name
+        for dir_name in [csv_split_map.get(split, split), split, split]:
+            candidate = os.path.join(feature_root, dir_name)
+            if os.path.isdir(candidate) and os.listdir(candidate):
+                self.feat_dir = candidate
+                break
+        else:
+            self.feat_dir = os.path.join(feature_root, split)
 
     def __len__(self):
         return len(self.data)
