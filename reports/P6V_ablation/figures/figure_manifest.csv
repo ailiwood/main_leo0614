@@ -1,0 +1,3 @@
+filename,dpi,source_data,description
+mosei_core_ablation_acc2.png,1000,MOSEI P6V results,ACC2 bar chart: main vs 5 ablation variants
+mosei_ablation_delta.png,1000,MOSEI P6V results,Delta ACC2 vs main AWAF baseline
