@@ -1,0 +1,5 @@
+model,test_ACC2,val_ACC2,MAE,params_M,status
+tfn_lite,42.53,57.41,1.42,1.83,smoke_success
+lmf_lite,42.23,57.41,1.43,1.75,smoke_success
+mult_lite,42.23,57.41,1.57,1.72,smoke_success
+self_mm_lite,57.77,42.59,1.41,1.71,smoke_success

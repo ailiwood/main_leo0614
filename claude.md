@@ -679,3 +679,13 @@ reports/experiment_registry.csv（如有实验）
 ```
 
 不得自动进入下一阶段，除非用户明确要求连续推进。
+
+
+---
+## P6M Baseline-Lite 路线 (2026-06-19)
+Baseline 路线固定为内部 baseline-lite 轻量复现。外部仓库仅作结构参考/引文来源/原论文报告值来源。
+固定 baseline: TFN-lite, LMF-lite, MulT-lite, MISA-lite, SelfMM-lite, MMIM-lite, MLCL-lite, DLF-lite。
+第一批: TFN-lite, LMF-lite, MulT-lite, SelfMM-lite。
+CASP 不入普通baseline主列(TTA)。DPDF-LQ/DashFusion/R3DG暂不执行。
+原论文报告值标注 'Reported by original paper'。Baseline-lite结果必须来自真实训练+utils/metrics.py统一复算。
+教学演示/模拟/占位不得进入论文正式实验表。

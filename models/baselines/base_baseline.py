@@ -1,35 +1,102 @@
 """
 models/baselines/base_baseline.py — Baseline-Lite 基类
 
-统一接口:
-  输入: text, audio, vision, text_mask, audio_mask, vision_mask, label, sample_id
-  输出: reg, cls_logits(可选), loss_terms, debug(可选)
-
-必须支持: text_only, text_audio, text_audio_vision
+统一接口。关键张量形状基于 TextFTMultimodalDataset 实际输出。
 """
+import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from typing import Dict, Optional
 
 
 class BaseBaseline(nn.Module):
-    """Baseline-lite 基类。所有 baseline 模型继承此类。"""
+    """Baseline-lite 基类。
+
+    Batch 字段 (来自 TextFTMultimodalDataset):
+      input_ids:     [B, 128]        tokenized text (roberta-large tokenizer)
+      attention_mask:[B, 128]        text attention mask
+      audio:         [B, 100, 768]   frozen audio features
+      audio_mask:    [B, 100]        audio padding mask
+      vision:        [B, 40, 768]    frozen vision features
+      vision_mask:   [B, 40]         vision padding mask
+      label:         [B, 1]          sentiment score (-3 to +3)
+    """
 
     def __init__(self, config: dict):
         super().__init__()
         self.config = config
-        self.mode = config.get('mode', 'text_audio_vision')
+        self.mode = config.get('modality_mode', 'text_audio_vision')
+        H = config.get('hidden_dim', 64)
+
+        # Lightweight text encoder (no RoBERTa)
+        if self._use_text:
+            vocab_size = config.get('vocab_size', 50265)  # roberta-large
+            self.text_embed = nn.Embedding(vocab_size, H, padding_idx=1)
+            self.text_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
+            self.text_proj = nn.Linear(H * 2, H)
+
+        # Audio projection
+        if self._use_audio:
+            self.audio_proj = nn.Sequential(nn.Linear(768, H), nn.ReLU())
+            self.audio_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
+            self.audio_out = nn.Linear(H * 2, H)
+
+        # Vision projection
+        if self._use_vision:
+            self.vision_proj = nn.Sequential(nn.Linear(768, H), nn.ReLU())
+            self.vision_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
+            self.vision_out = nn.Linear(H * 2, H)
+
+    @property
+    def _use_text(self):
+        return self.mode in ('text_only', 'text_audio', 'text_audio_vision')
+
+    @property
+    def _use_audio(self):
+        return self.mode in ('text_audio', 'text_audio_vision', 'audio_only')
+
+    @property
+    def _use_vision(self):
+        return self.mode in ('text_audio_vision', 'vision_only')
+
+    @property
+    def n_modalities(self):
+        return sum([self._use_text, self._use_audio, self._use_vision])
+
+    def _encode_text(self, batch):
+        """Text: embedding → GRU → masked mean pool → [B, H]"""
+        ids = batch['input_ids']
+        mask = batch['attention_mask']
+        emb = self.text_embed(ids)  # [B, 128, H]
+        out, _ = self.text_gru(emb)  # [B, 128, H*2]
+        ht = self.text_proj(out)  # [B, 128, H]
+        return self._masked_pool(ht, mask)
+
+    def _encode_audio(self, batch):
+        """Audio: projection → GRU → masked mean pool → [B, H]"""
+        a = batch['audio']  # [B, T, 768]
+        mask = batch.get('audio_mask', None)
+        ha = self.audio_proj(a)  # [B, T, H]
+        out, _ = self.audio_gru(ha)  # [B, T, H*2]
+        ha_out = self.audio_out(out)  # [B, T, H]
+        return self._masked_pool(ha_out, mask)
+
+    def _encode_vision(self, batch):
+        """Vision: projection → GRU → masked mean pool → [B, H]"""
+        v = batch['vision']  # [B, T, 768]
+        mask = batch.get('vision_mask', None)
+        hv = self.vision_proj(v)  # [B, T, H]
+        out, _ = self.vision_gru(hv)  # [B, T, H*2]
+        hv_out = self.vision_out(out)  # [B, T, H]
+        return self._masked_pool(hv_out, mask)
+
+    def _masked_pool(self, x, mask=None):
+        """Masked mean pooling. x: [B, T, H], mask: [B, T]"""
+        if mask is not None:
+            mask_f = mask.unsqueeze(-1).float()
+            x = x * mask_f
+            return x.sum(dim=1) / (mask_f.sum(dim=1) + 1e-8)
+        return x.mean(dim=1)
 
     def forward(self, batch: Dict) -> Dict:
         raise NotImplementedError
-
-    def compute_loss(self, output: Dict, batch: Dict) -> Dict:
-        raise NotImplementedError
-
-    @staticmethod
-    def get_modalities(mode: str):
-        """Return modality config given mode."""
-        return {
-            'use_text': mode in ('text_only', 'text_audio', 'text_audio_vision'),
-            'use_audio': mode in ('audio_only', 'text_audio', 'text_audio_vision', 'av_only'),
-            'use_vision': mode in ('vision_only', 'text_audio_vision', 'av_only'),
-        }
