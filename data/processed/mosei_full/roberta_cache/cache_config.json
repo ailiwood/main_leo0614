@@ -1,0 +1,1 @@
+{"model": "roberta-large", "max_length": 64, "dim": 1024, "batch_size": 32}

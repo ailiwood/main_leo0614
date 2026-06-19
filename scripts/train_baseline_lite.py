@@ -29,24 +29,34 @@ def import_model(name):
     return getattr(importlib.import_module(mod_path), cls_name)
 
 
-def inject_text_feature(batch, roberta, device):
-    """Add RoBERTa CLS feature to batch for baseline models."""
-    if roberta is not None:
+def inject_text_feature(batch, roberta, device, cached_features=None, split='train'):
+    """Add RoBERTa CLS feature to batch (cached or online)."""
+    if cached_features and split in cached_features:
+        feats, id_to_idx = cached_features[split]
+        sample_ids = batch.get('id', [])
+        indices = []
+        for sid in sample_ids:
+            if sid in id_to_idx:
+                indices.append(id_to_idx[sid])
+            else:
+                indices.append(0)  # fallback (shouldn't happen if cache is complete)
+        batch['roberta_cls'] = torch.from_numpy(feats[indices]).float().to(device)
+    elif roberta is not None:
         with torch.no_grad():
             ids = batch['input_ids'].to(device)
             am = batch['attention_mask'].to(device)
             out = roberta(input_ids=ids, attention_mask=am)
-            batch['text_feature'] = out.last_hidden_state[:, 0, :]  # CLS [B, 1024]
+            batch['text_feature'] = out.last_hidden_state[:, 0, :]
     return batch
 
 
-def evaluate(model, loader, device, roberta=None):
+def evaluate(model, loader, device, roberta=None, cached_features=None, split='val'):
     """Return predictions, labels, and compute_all_metrics dict."""
     model.eval()
     preds, labels = [], []
     with torch.no_grad():
         for batch in loader:
-            batch = inject_text_feature(batch, roberta, device)
+            batch = inject_text_feature(batch, roberta, device, cached_features, split)
             batch = {k: v.to(device) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             out = model(batch)
             preds.append(out['reg'].cpu())
@@ -103,15 +113,32 @@ def main():
 
     # Model
     use_pretrained_text = m.get('use_pretrained_text', False)
+    cache_dir = m.get('roberta_cache_dir', 'data/processed/mosei_full/roberta_cache')
     roberta = None
+    cached_features = {}
     if use_pretrained_text:
-        from transformers import AutoModel
-        print('[MODEL] Loading RoBERTa-large for text features (frozen)...')
-        roberta = AutoModel.from_pretrained('roberta-large').to(DEVICE)
-        for p in roberta.parameters():
-            p.requires_grad = False
-        roberta.eval()
-        print('[MODEL] RoBERTa loaded, frozen.')
+        import json
+        # Load cached features if available
+        for split in ['train', 'valid', 'test']:
+            feat_path = os.path.join(cache_dir, f'{split}_roberta_cls.npy')
+            ids_path = os.path.join(cache_dir, f'{split}_ids.json')
+            if os.path.exists(feat_path) and os.path.exists(ids_path):
+                feats = np.load(feat_path)
+                with open(ids_path) as f:
+                    ids = json.load(f)
+                id_to_idx = {sid: i for i, sid in enumerate(ids)}
+                cached_features[split] = (feats, id_to_idx)
+                print(f'[CACHE] Loaded {split}: {feats.shape}')
+        if cached_features:
+            print(f'[CACHE] Using cached RoBERTa features from {cache_dir}')
+        else:
+            # Fallback: online RoBERTa
+            from transformers import AutoModel
+            print('[MODEL] Loading RoBERTa-large for text features (frozen)...')
+            roberta = AutoModel.from_pretrained('roberta-large').to(DEVICE)
+            for p in roberta.parameters():
+                p.requires_grad = False
+            roberta.eval()
 
     model_cls = import_model(MODEL_NAME)
     model = model_cls({**m, 'modality_mode': MODE}).to(DEVICE)
@@ -155,7 +182,7 @@ def main():
         for i, batch in enumerate(tqdm(tl, desc=f'E{epoch}', leave=False)):
             if args.limit_batches and i >= args.limit_batches:
                 break
-            batch = inject_text_feature(batch, roberta, DEVICE)
+            batch = inject_text_feature(batch, roberta, DEVICE, cached_features, 'train')
             batch = {k: v.to(DEVICE) if isinstance(v, torch.Tensor) else v for k, v in batch.items()}
             out = model(batch)
             lbl = batch['label'].squeeze(-1)
@@ -169,7 +196,7 @@ def main():
         avg_loss = total_loss / min(len(tl), args.limit_batches or len(tl))
 
         # Val
-        _, _, val_m = evaluate(model, vl, DEVICE, roberta)
+        _, _, val_m = evaluate(model, vl, DEVICE, roberta, cached_features, 'valid')
 
         # Record
         metrics_epoch['epoch'].append(epoch)
@@ -217,7 +244,7 @@ def main():
     # Test final once with best model
     if TEST_ONCE and best_state:
         model.load_state_dict(best_state)
-    test_preds, test_labels, test_m = evaluate(model, tlt, DEVICE, roberta)
+    test_preds, test_labels, test_m = evaluate(model, tlt, DEVICE, roberta, cached_features, 'test')
 
     # Save predictions
     with open(os.path.join(out_dir, 'predictions_test.csv'), 'w', newline='') as f:

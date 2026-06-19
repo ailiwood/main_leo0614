@@ -44,13 +44,15 @@ class BaseBaseline(nn.Module):
 
         # Audio projection
         if self._use_audio:
-            self.audio_proj = nn.Sequential(nn.Linear(768, H), nn.ReLU())
+            A_DIM = config.get('audio_input_dim', 768)
+            self.audio_proj = nn.Sequential(nn.Linear(A_DIM, H), nn.ReLU())
             self.audio_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
             self.audio_out = nn.Linear(H * 2, H)
 
         # Vision projection
         if self._use_vision:
-            self.vision_proj = nn.Sequential(nn.Linear(768, H), nn.ReLU())
+            V_DIM = config.get('vision_input_dim', 768)
+            self.vision_proj = nn.Sequential(nn.Linear(V_DIM, H), nn.ReLU())
             self.vision_gru = nn.GRU(H, H, batch_first=True, bidirectional=True)
             self.vision_out = nn.Linear(H * 2, H)
 
@@ -72,9 +74,14 @@ class BaseBaseline(nn.Module):
 
     def _encode_text(self, batch):
         """Text → [B, H] pooled representation."""
-        if self.use_pretrained_text and 'text_feature' in batch:
-            # Use precomputed feature (e.g. RoBERTa CLS [B, 1024])
-            feat = batch['text_feature']
+        if self.use_pretrained_text:
+            if 'text_feature' in batch:
+                feat = batch['text_feature']  # RoBERTa CLS [B, 1024]
+            elif 'roberta_cls' in batch:
+                feat = batch['roberta_cls']    # cached feature [B, 1024]
+            else:
+                # Fallback: run RoBERTa from input_ids
+                return self.text_proj(torch.zeros(batch['input_ids'].size(0), self.text_proj.in_features, device=batch['input_ids'].device))
             return self.text_proj(feat)  # [B, H]
         # Fallback: GRU encoder
         ids = batch['input_ids']

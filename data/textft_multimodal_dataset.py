@@ -23,7 +23,10 @@ class TextFTMultimodalDataset(Dataset):
         self.data = [r for r in rows if r.get('mode', 'train') == split_map.get(split, split)]
 
         # Tokenizer for raw text
-        self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
+        except Exception:
+            self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
 
         # Feature directory
         self.feat_dir = os.path.join(feature_root, split)
