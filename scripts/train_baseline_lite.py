@@ -16,6 +16,10 @@ MODEL_MAP = {
     'mult_lite': 'models.baselines.mult_lite.MulTLite',
     'self_mm_lite': 'models.baselines.self_mm_lite.SelfMMLite',
     'selfmm_lite': 'models.baselines.self_mm_lite.SelfMMLite',
+    'misa_lite': 'models.baselines.misa_lite.MISALite',
+    'mmim_lite': 'models.baselines.mmim_lite.MMIMLite',
+    'mlcl_lite': 'models.baselines.mlcl_lite.MLCLLite',
+    'dlf_lite': 'models.baselines.dlf_lite.DLFLite',
 }
 
 
