@@ -28,8 +28,8 @@ class TextFTMultimodalDataset(Dataset):
         except Exception:
             self.tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, local_files_only=True)
 
-        # Feature directory
-        self.feat_dir = os.path.join(feature_root, split)
+        # Feature directory (use mapped split name for path)
+        self.feat_dir = os.path.join(feature_root, split_map.get(split, split))
 
     def __len__(self):
         return len(self.data)
