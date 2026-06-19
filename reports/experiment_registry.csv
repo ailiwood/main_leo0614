@@ -5,3 +5,11 @@ timestamp,phase,model,dataset,split,seed,feature_version,lr,batch_size,eff_batch
 20260618_185139,P6H-R,Repair-R3-unifmix,MOSI,val,42,TextFT_768d,3e-6/3e-5,4,16,30,30,87.96,,,,,,0.811,0.771,,,no,configs/experiments/p6h_repair/mosi_r3_uniform_mix.yaml,,outputs/P6H_repair/R3_uniform_mix_s42/,同R2(87.96);uniform mix不额外提升
 20260618_191947,P6H-R,Repair-R4-conservative,MOSI,val,42,TextFT_768d,2e-6/1e-5,4,16,7,7,57.41,,,,,,1.417,0.221,,,no,configs/experiments/p6h_repair/mosi_r4_conservative.yaml,,outputs/P6H_repair/R4_conservative_s42/,lr过低→early stop E7→text未学习
 20260618_194040,P6H-R,Repair-BEST-R2-full,MOSI,test,42,TextFT_768d,3e-6/3e-5,4,16,42,32,88.89,81.86,80.00,,,,0.957,0.729,35.13,B,no,configs/models/textft_lora_awaf_mosi_p6h_repair_best.yaml,,outputs/P6H_repair/BEST_R2_full_s42/,AWAF权重健康(w_t=0.26/w_a=0.23/w_v=0.51)但text_base退化(86.43→81.86);residual_gain=0.00%
+20260619_031645,P6K,text_audio_conservative,MOSI,test,42,TextFT_768d,5e-5/3e-5,4,16,50,12,87.50,88.72,86.64,,,,0.635,0.851,46.65,A,yes,configs/experiments/p6k_conservative/mosi_text_audio_conservative_s42.yaml,,outputs/P6K/text_audio_conservative_s42/,MOSI候选主模型;text_audio T+A;residual_gain=0
+20260619_04xxxx,P6K,text_audio_conservative,MOSI,test,2024,TextFT_768d,5e-5/3e-5,4,16,50,29,89.35,86.89,84.75,,,,0.650,0.841,47.67,A,yes,configs/experiments/p6k_conservative/mosi_text_audio_conservative_s2024.yaml,,outputs/P6K/text_audio_conservative_s2024/,MOSI候选主模型seed2024
+20260619_021040,P6K,textbase_recovery_multimodal,MOSI,test,42,TextFT_768d,5e-5,4,16,50,13,88.43,86.13,83.30,,,,0.611,0.853,46.21,A,yes,configs/experiments/p6k_conservative/mosi_textbase_class_recovery.yaml,,outputs/P6K/textbase_recovery_multimodal/,回归修复验证;匹配P6H参数
+20260619,P6L,MLCL_audit,MOSI,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,,,,,B,no,external/MLCL,,,smoke B档;features可用;需env
+20260619,P6L,DLF_audit,MOSI,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,,,,,B,no,external/DLF,,,smoke B档;需MMSA数据格式
+20260619,P6L,DPDF-LQ_audit,MOSI,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,,,,,B,no,external/DPDF-LQ,,,smoke B档;需数据下载
+20260619,P6L,MMSA_audit,MOSI,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,,,,,B,no,external/MMSA,,,6 classic baselines;需env+数据
+20260619,P6L,MOSEI_dataloader,MOSEI,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,N/A,,,,,N/A,no,,,BLOCKED;CSD未提取

@@ -306,10 +306,23 @@ def main():
     # ================================================================
     # Data
     # ================================================================
-    print(f'[DATA] Loading MOSI (formal_mode=True)...')
-    train_ds = TextFTMultimodalDataset(split='train', formal_mode=True)
-    val_ds = TextFTMultimodalDataset(split='val', formal_mode=True)
-    test_ds = TextFTMultimodalDataset(split='test', formal_mode=True)
+    data_cfg = yc.get('data', {})
+    DATASET_NAME = data_cfg.get('dataset', 'mosi')
+    FORMAL_MODE = data_cfg.get('formal_mode', True)
+    CSV_PATH = data_cfg.get('csv_path', f'data/{DATASET_NAME}/label.csv')
+    FEATURE_ROOT = data_cfg.get('feature_root', f'data/features_strong_sequence_{DATASET_NAME}_v3_T40')
+
+    print(f'[DATA] Loading {DATASET_NAME.upper()} (formal_mode={FORMAL_MODE})...')
+    try:
+        train_ds = TextFTMultimodalDataset(csv_path=CSV_PATH, feature_root=FEATURE_ROOT,
+                                           split='train', formal_mode=FORMAL_MODE)
+        val_ds = TextFTMultimodalDataset(csv_path=CSV_PATH, feature_root=FEATURE_ROOT,
+                                         split='val', formal_mode=FORMAL_MODE)
+        test_ds = TextFTMultimodalDataset(csv_path=CSV_PATH, feature_root=FEATURE_ROOT,
+                                          split='test', formal_mode=FORMAL_MODE)
+    except Exception as e:
+        print(f'[ERROR] Failed to load {DATASET_NAME.upper()} dataset: {e}')
+        raise
     print(f'  Train={len(train_ds)}  Val={len(val_ds)}  Test={len(test_ds)}')
 
     tl = DataLoader(train_ds, BATCH, shuffle=True, collate_fn=collate_textft)

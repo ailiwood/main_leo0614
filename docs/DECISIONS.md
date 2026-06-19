@@ -268,3 +268,34 @@
 
 - **决策**：MOSEI 保持维度兼容状态，不启动正式训练
 - **理由**：MMSDK 安装仍 blocked，且主模型尚未冻结
+
+---
+
+## 2026-06-19 P6K/P6L：conservative mainline + MOSEI 启动
+
+### D039：MOSI 主模型锁定为 text_audio conservative (T+A)
+
+- **决策**：MOSI 主模型路线锁定为 text_audio conservative（T+A 双模态），不再将 vision 作为 MOSI mainline 继续投入资源
+- **理由**：(1) P6K s42=88.72%, s2024=86.89%, 2-seed mean=87.8% 均超过 P6H inline 86.43%；(2) text_audio 为项目最高 MOSI test ACC2；(3) vision 单模态仅 65.28% ACC2，AV 组合不优于纯 audio
+- **限制**：该结论仅限 MOSI。MOSEI 是否保留 vision 需由 MOSEI text_audio 结果和候选实验决定，不得外推
+
+### D040：Residual/delta 非主要提升来源
+
+- **决策**：论文不得声称 residual delta 修正模块带来主要提升
+- **理由**：(1) 6 轮实验 (P6H+R1-R4+P6I) 全部 residual_gain=0.00%；(2) P6J delta_sign_correct_rate≈48.69%（≈随机）；(3) P6K 88.72% 来自 text-audio co-training，非 delta 修正
+- **影响**：若有 residual/delta 代码，只能作为工程实现细节或待裁决候选
+
+### D041：2025 baseline 精简为 3 个
+
+- **决策**：本轮 2025+ baseline 只保留 MLCL、DLF、DPDF-LQ
+- **理由**：DashFusion/R3DG 本轮不测试（避免发散）；CASP 是 TTA 方法，不混入普通 baseline 主表
+- **影响**：baseline 表分为 2025 modern (MLCL/DLF/DPDF-LQ) 和 classic (TFN/LMF/MulT/MISA/Self-MM/MMIM via MMSA)
+
+### D042：MOSEI 主模型未锁定
+
+- **决策**：MOSEI 必须重新跑 text_audio conservative，根据真实结果决定是否需要 T+A+V 或 vision 候选
+- **理由**：MOSI 的 vision 结论不得外推到 MOSEI
+
+### D043：第 5 章仍不能写确定性结论
+
+- **决策**：只有完成 MOSEI + baseline + 消融并统一指标复算后，才允许进入论文结果章节
