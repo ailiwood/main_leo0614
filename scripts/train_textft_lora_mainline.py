@@ -488,6 +488,8 @@ def main():
         if PATIENCE > 0 and no_improve >= PATIENCE:
             print(f'[EARLY STOP] No improvement for {PATIENCE} epochs. Best: epoch={best_epoch} ACC2={best_val_acc:.2f}%')
             break
+        elif PATIENCE == 0:
+            pass  # no early stopping — run all epochs
 
     print(f'\n=== Training done: best_val_ACC2={best_val_acc:.2f}% at epoch {best_epoch} ===')
 
