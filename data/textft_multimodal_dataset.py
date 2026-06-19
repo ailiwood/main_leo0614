@@ -77,6 +77,21 @@ class TextFTMultimodalDataset(Dataset):
         }
 
 
+def _clean_features(tensor, feature_name=''):
+    """Replace -inf/+inf with 0.0 in feature tensors (COVAREP may have -inf from log(0))."""
+    if torch.isinf(tensor).any():
+        # Log first occurrence for debugging
+        n_inf = torch.isinf(tensor).sum().item()
+        if n_inf > 0:
+            # Replace -inf and +inf with 0.0
+            tensor = torch.where(torch.isinf(tensor), torch.zeros_like(tensor), tensor)
+    if tensor.isnan().any():
+        n_nan = tensor.isnan().sum().item()
+        if n_nan > 0:
+            tensor = torch.where(tensor.isnan(tensor), torch.zeros_like(tensor), tensor)
+    return tensor
+
+
 def collate_textft(batch):
     """Collate for TextFT multimodal data."""
     B = len(batch)
@@ -98,10 +113,14 @@ def collate_textft(batch):
         input_ids[i, :tl] = item['input_ids'][:tl]
         attention_mask[i, :tl] = item['attention_mask'][:tl]
         al = min(item['audio'].size(0), max_al)
-        audio[i, :al] = item['audio'][:al]
+        # Clean -inf/+inf from COVAREP audio features before inserting
+        audio_i = _clean_features(item['audio'][:al])
+        audio[i, :al] = audio_i
         audio_mask[i, :al] = item['audio_mask'][:al]
         vl = min(item['vision'].size(0), max_vl)
-        vision[i, :vl] = item['vision'][:vl]
+        # Clean vision features too (belt-and-suspenders)
+        vision_i = _clean_features(item['vision'][:vl])
+        vision[i, :vl] = vision_i
         vision_mask[i, :vl] = item['vision_mask'][:vl]
         labels[i] = item['label']
         ids.append(item['id'])

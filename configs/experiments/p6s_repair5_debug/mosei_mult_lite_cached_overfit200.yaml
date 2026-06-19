@@ -1,0 +1,33 @@
+# P6S-Repair-5: MulT-lite 200-sample overfit test
+# Must achieve train ACC2_Non0 > 90% before full training
+data:
+  csv_path: data/processed/mosei_full/label.csv
+  dataset: mosei
+  feature_root: data/processed/mosei_full
+  formal_mode: true
+model:
+  audio_input_dim: 74
+  dropout: 0.0          # No dropout for overfit
+  hidden_dim: 128
+  modality_mode: text_audio
+  model_name: mult_lite
+  nhead: 4
+  roberta_cache_dir: data/processed/mosei_full/roberta_cache
+  seq_pool: last
+  text_input_dim: 1024
+  use_pretrained_text: true
+output:
+  exp_name: mult_lite_cached_overfit200_s42
+  root: outputs/P6S_repair5/mosei
+phase: P6S-Repair-5-Debug
+training:
+  batch_size: 32
+  early_stopping_patience: 0  # No early stopping for overfit
+  epochs: 50
+  lr: 0.001                  # Higher LR for overfit
+  min_epochs: 30
+  monitor_metric: ACC2_Non0
+  seed: 42
+  test_final_once: false     # Don't test, just train overfit
+  weight_decay: 0.0          # No weight decay for overfit
+  train_subset: 200          # Only 200 samples

@@ -10,6 +10,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from data.textft_multimodal_dataset import TextFTMultimodalDataset, collate_textft
 from utils.metrics import compute_all_metrics
 
+
+# Collapse detection thresholds
+COLLAPSE_GUARD = {
+    'pred_std_min': 1e-6,       # prediction std below this → collapse
+    'positive_ratio_min': 0.01,  # <1% positive → near all-neg collapse
+    'positive_ratio_max': 0.99,  # >99% positive → near all-pos collapse
+    'f1_non0_min': 0.01,         # F1_Non0 < 0.01 for 2 epochs → collapse
+    'nan_loss_trigger': True,    # Any NaN loss → immediate stop
+    'consecutive_epochs': 2,     # How many consecutive bad epochs before stop
+    'identical_metric_trigger': True,  # If ACC2 identical for 3 epochs → dead model
+}
+
 MODEL_MAP = {
     'tfn_lite': 'models.baselines.tfn_lite.TFNLite',
     'lmf_lite': 'models.baselines.lmf_lite.LMFLite',
@@ -21,6 +33,33 @@ MODEL_MAP = {
     'mlcl_lite': 'models.baselines.mlcl_lite.MLCLLite',
     'dlf_lite': 'models.baselines.dlf_lite.DLFLite',
 }
+
+
+def _check_collapse(reg_preds, epoch, model_name, prev_check=None):
+    """Check regression predictions for collapse signals.
+
+    Returns:
+        (is_collapsed: bool, reasons: list, info: dict, debug_data: dict)
+    """
+    rp = reg_preds  # numpy array
+    reasons = []
+    info = {'pred_std': float(np.std(rp)), 'positive_ratio': float((rp >= 0).mean()),
+            'nan_count': int(np.isnan(rp).sum()), 'total': len(rp)}
+
+    if info['nan_count'] > 0:
+        reasons.append(f'NAN_COUNT={info["nan_count"]}/{info["total"]}')
+    if info['pred_std'] < COLLAPSE_GUARD['pred_std_min']:
+        reasons.append(f'PRED_STD={info["pred_std"]:.2e}<{COLLAPSE_GUARD["pred_std_min"]}')
+    if info['positive_ratio'] <= COLLAPSE_GUARD['positive_ratio_min']:
+        reasons.append(f'POS_RATIO={info["positive_ratio"]:.4f}≤{COLLAPSE_GUARD["positive_ratio_min"]}')
+    if info['positive_ratio'] >= COLLAPSE_GUARD['positive_ratio_max']:
+        reasons.append(f'POS_RATIO={info["positive_ratio"]:.4f}≥{COLLAPSE_GUARD["positive_ratio_max"]}')
+
+    # Check identical ACC2 over epochs
+    if prev_check and abs(info.get('acc2', 0) - prev_check.get('acc2', 0)) < 1e-6:
+        reasons.append('IDENTICAL_ACC2')
+
+    return len(reasons) > 0, reasons, info, {}
 
 
 def import_model(name):
@@ -102,8 +141,14 @@ def main():
     ds_name = d.get('dataset', 'mosi')
     csv_path = d.get('csv_path', f'data/{ds_name}/label.csv')
     feat_root = d.get('feature_root', f'data/features_strong_sequence_{ds_name}_v3_T40')
+    train_subset = t.get('train_subset', 0)  # 0 = use all, N = use first N samples
     print(f'[DATA] {ds_name.upper()} from {csv_path}')
     train_ds = TextFTMultimodalDataset(csv_path=csv_path, feature_root=feat_root, split='train')
+    if train_subset > 0:
+        from torch.utils.data import Subset
+        indices = list(range(min(train_subset, len(train_ds))))
+        train_ds = Subset(train_ds, indices)
+        print(f'  Train subset: {len(train_ds)} samples (overfit debug mode)')
     val_ds = TextFTMultimodalDataset(csv_path=csv_path, feature_root=feat_root, split='val')
     test_ds = TextFTMultimodalDataset(csv_path=csv_path, feature_root=feat_root, split='test')
     print(f'  Train={len(train_ds)} Val={len(val_ds)} Test={len(test_ds)}')
@@ -196,7 +241,66 @@ def main():
         avg_loss = total_loss / min(len(tl), args.limit_batches or len(tl))
 
         # Val
-        _, _, val_m = evaluate(model, vl, DEVICE, roberta, cached_features, 'valid')
+        val_preds, val_labels, val_m = evaluate(model, vl, DEVICE, roberta, cached_features, 'valid')
+
+        # === Anti-collapse guard ===
+        guard_info = {'acc2': val_m['ACC2_Non0']}
+        guard_data = {}
+        try:
+            is_collapsed, reasons, guard_info, guard_data = _check_collapse(
+                val_preds, epoch, MODEL_NAME,
+                prev_check=getattr(main, '_prev_guard', None))
+            main._prev_guard = guard_info
+        except Exception:
+            pass  # Guard errors are non-fatal
+
+        # Collapse triggers
+        collapse_stop = False
+        if np.isnan(avg_loss):
+            collapse_stop = True
+            guard_info['collapse_reason'] = 'train_loss_NaN'
+        if val_m['MAE'] is not None and np.isnan(val_m['MAE']):
+            collapse_stop = True
+            guard_info['collapse_reason'] = guard_info.get('collapse_reason', '') + 'val_MAE_NaN'
+        if val_m['Corr'] is not None and np.isnan(val_m['Corr']):
+            collapse_stop = True
+            guard_info['collapse_reason'] = guard_info.get('collapse_reason', '') + 'val_Corr_NaN'
+
+        if is_collapsed:
+            consec = guard_info.get('consecutive', 0) + 1
+            guard_info['consecutive'] = consec
+            if consec >= COLLAPSE_GUARD['consecutive_epochs']:
+                collapse_stop = True
+                guard_info['collapse_reason'] = guard_info.get('collapse_reason', '') + ';'.join(reasons)
+        else:
+            guard_info['consecutive'] = 0
+
+        if collapse_stop:
+            print(f'\n[COLLAPSE GUARD] EPOCH {epoch}: {guard_info.get("collapse_reason", "unknown")}')
+            print(f'  Pred std={guard_info.get("pred_std", -1):.6f} pos_ratio={guard_info.get("positive_ratio", -1):.4f}')
+            print(f'  NaN count={guard_info.get("nan_count", -1)} reasons={reasons}')
+            # Save debug batch
+            try:
+                dbg_batch = next(iter(tl))
+                dbg_batch = inject_text_feature(dbg_batch, roberta, DEVICE, cached_features, 'train')
+                torch.save({k: v.cpu() if isinstance(v, torch.Tensor) else v for k, v in dbg_batch.items()},
+                           os.path.join(out_dir, 'collapse_debug_batch.pt'))
+                print(f'  Debug batch saved to collapse_debug_batch.pt')
+            except Exception:
+                pass
+            # Write error log
+            with open(os.path.join(out_dir, 'error.log'), 'w') as ef:
+                ef.write(f'COLLAPSE_GUARD triggered at epoch {epoch}\n')
+                ef.write(f'Reason: {guard_info.get("collapse_reason", "unknown")}\n')
+                ef.write(f'Pred std={guard_info.get("pred_std", -1):.6f}\n')
+                ef.write(f'Pos ratio={guard_info.get("positive_ratio", -1):.4f}\n')
+                ef.write(f'NaN count={guard_info.get("nan_count", -1)}\n')
+                ef.write(f'Reasons: {reasons}\n')
+                metric_keys = ['ACC2_Non0', 'F1_Non0', 'MAE', 'Corr']
+                ef.write(f'Metrics: {json.dumps({k: val_m.get(k, 0) for k in metric_keys})}\n')
+            raise RuntimeError(f'COLLAPSE_GUARD: Training aborted at epoch {epoch}. '
+                               f'Reason: {guard_info.get("collapse_reason", "unknown")}')
+        # === End anti-collapse guard ===
 
         # Record
         metrics_epoch['epoch'].append(epoch)

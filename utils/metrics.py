@@ -22,12 +22,19 @@ def _to_numpy(x):
 
 
 def compute_mae(preds, targets):
-    """Mean Absolute Error。"""
+    """Mean Absolute Error。
+
+    Raises ValueError if ALL predictions are NaN (fail-fast for training collapse).
+    """
     preds = _to_numpy(preds)
     targets = _to_numpy(targets)
     valid = ~(np.isnan(preds) | np.isnan(targets))
     if valid.sum() == 0:
-        return float('nan')
+        raise ValueError(
+            f'MAE: ALL {len(preds)} predictions are NaN! '
+            f'(targets NaN={np.isnan(targets).sum()}, preds NaN={np.isnan(preds).sum()}). '
+            f'This indicates model collapse — check data for -inf/NaN inputs.'
+        )
     return float(np.mean(np.abs(preds[valid] - targets[valid])))
 
 
@@ -179,10 +186,21 @@ def compute_all_metrics(reg_pred, cls_logit, targets):
     Returns:
         dict with keys:
             MAE, Corr, ACC2_Non0, F1_Non0, ACC2_Has0, F1_Has0, ACC7
+
+    Raises:
+        ValueError: if reg_pred has NaN count > 10% (fail-fast on collapse)
     """
     reg_pred = _to_numpy(reg_pred)
     cls_logit = _to_numpy(cls_logit)
     targets = _to_numpy(targets)
+
+    # Fail-fast: if >10% of predictions are NaN, raise immediately
+    nan_ratio = np.isnan(reg_pred).mean()
+    if nan_ratio > 0.1:
+        raise ValueError(
+            f'Collapse detected: {nan_ratio*100:.1f}% of reg_pred ({np.isnan(reg_pred).sum()}/{len(reg_pred)}) '
+            f'are NaN. Check data pipeline for -inf/NaN inputs or model divergence.'
+        )
 
     return {
         'MAE': compute_mae(reg_pred, targets),

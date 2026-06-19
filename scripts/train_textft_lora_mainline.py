@@ -33,6 +33,9 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--config', type=str, required=True, help='YAML config path')
     p.add_argument('--device', type=str, default='cuda')
+    p.add_argument('--max_epochs', type=int, default=0, help='Override epochs (0=use config)')
+    p.add_argument('--limit_batches', type=int, default=0, help='Limit train/val batches (0=use all)')
+    p.add_argument('--smoke', action='store_true', help='Smoke test: 1 epoch, 5 batches')
     return p.parse_args()
 
 
@@ -287,7 +290,11 @@ def main():
     out_cfg = yc.get('output', {})
 
     SEED = t.get('seed', 42)
-    EPOCHS = t.get('epochs', 30)
+    EPOCHS = args.max_epochs or t.get('epochs', 30)
+    LIMIT_BATCHES = args.limit_batches or (5 if args.smoke else 0)
+    if args.smoke:
+        EPOCHS = 1
+        print(f'[SMOKE] 1 epoch, {LIMIT_BATCHES} batches')
     BATCH = t.get('batch_size', 4)
     ACCUM = t.get('grad_accum_steps', 4)
     LR = t.get('lr', 3e-5)
@@ -384,6 +391,8 @@ def main():
         opt.zero_grad()
         pbar = tqdm(tl, desc=f'E{epoch:2d}', leave=False)
         for i, batch in enumerate(pbar):
+            if LIMIT_BATCHES and i >= LIMIT_BATCHES:
+                break
             out = model(batch)
             lbl = batch['label'].to(DEVICE)
 
@@ -424,13 +433,15 @@ def main():
             total_loss += loss.item() * ACCUM
             pbar.set_postfix({'loss': f'{loss.item()*ACCUM:.4f}'})
 
-        avg_loss = total_loss / len(tl)
+        avg_loss = total_loss / min(len(tl), LIMIT_BATCHES or len(tl))
 
         # --- Val ---
         model.eval()
         vp_list, vl_list = [], []
         with torch.no_grad():
-            for batch in vl:
+            for vi, batch in enumerate(vl):
+                if LIMIT_BATCHES and vi >= LIMIT_BATCHES:
+                    break
                 out = model(batch)
                 vp_list.append(out['reg'].cpu())
                 vl_list.append(batch['label'].cpu())

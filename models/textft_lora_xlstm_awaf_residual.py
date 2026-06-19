@@ -379,6 +379,7 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         else:
             bdr = torch.zeros_like(rtb)
             dsr = torch.tensor(0.0, device=rtb.device)
+            dr = torch.zeros_like(rtb)  # No delta → zero delta regression
 
         # Gate
         if self.use_gate:

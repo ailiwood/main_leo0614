@@ -1,0 +1,34 @@
+phase: P6U-FREEZE
+dataset: mosei
+model_name: tfn_lite
+model_type: baseline
+modality_mode: text_audio
+seed: 42
+epochs: 12
+min_epochs: 3
+early_stopping_patience: 4
+monitor_metric: ACC2_Non0
+test_final_once: true
+data:
+  csv_path: data/processed/mosei_full/label.csv
+  dataset: mosei
+  feature_root: data/processed/mosei_full
+  formal_mode: true
+model:
+  model_name: tfn_lite
+  modality_mode: text_audio
+  audio_input_dim: 74
+  text_input_dim: 1024
+  hidden_dim: 128
+  dropout: 0.2
+  use_pretrained_text: true
+  roberta_cache_dir: data/processed/mosei_full/roberta_cache
+training:
+  batch_size: 64
+  epochs: 12
+  early_stopping_patience: 4
+  min_epochs: 3
+  lr: 0.0003
+  weight_decay: 0.01
+  seed: 42
+  test_final_once: true

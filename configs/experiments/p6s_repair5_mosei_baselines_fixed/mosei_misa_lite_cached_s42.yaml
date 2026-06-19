@@ -1,0 +1,29 @@
+# P6S-Repair-5: misa_lite MOSEI fixed training (COVAREP -inf cleaned)
+data:
+  csv_path: data/processed/mosei_full/label.csv
+  dataset: mosei
+  feature_root: data/processed/mosei_full
+  formal_mode: true
+model:
+  audio_input_dim: 74
+  dropout: 0.2
+  hidden_dim: 128
+  modality_mode: text_audio
+  model_name: misa_lite
+  roberta_cache_dir: data/processed/mosei_full/roberta_cache
+  text_input_dim: 1024
+  use_pretrained_text: true
+output:
+  exp_name: misa_lite_cached_s42_fixed
+  root: outputs/P6S_repair5/mosei/baselines
+phase: P6S-Repair-5
+training:
+  batch_size: 64
+  early_stopping_patience: 4
+  epochs: 12
+  lr: 0.0003
+  min_epochs: 3
+  monitor_metric: ACC2_Non0
+  seed: 42
+  test_final_once: true
+  weight_decay: 0.01
