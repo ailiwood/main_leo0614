@@ -1,0 +1,27 @@
+phase: P6S-Repair-4
+model:
+  model_name: mlcl_lite
+  modality_mode: text_audio
+  hidden_dim: 128
+  dropout: 0.2
+  use_pretrained_text: true
+  text_input_dim: 1024
+  audio_input_dim: 74
+  roberta_cache_dir: data/processed/mosei_full/roberta_cache
+data:
+  dataset: mosei
+  csv_path: data/processed/mosei_full/label.csv
+  feature_root: data/processed/mosei_full
+  formal_mode: true
+training:
+  seed: 42
+  epochs: 12
+  min_epochs: 3
+  early_stopping_patience: 4
+  batch_size: 64
+  lr: 0.0003
+  weight_decay: 0.01
+  test_final_once: true
+output:
+  root: outputs/P6S_repair4/mosei/baselines
+  exp_name: mlcl_lite_cached_s42
