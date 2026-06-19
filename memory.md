@@ -27,7 +27,11 @@ E:\00project_code\main_leo\refer
 
 ### 0.4 主模型当前原则
 
-最低主干：三模态投影 + 三路 sLSTM + AWAF（二阶交互）+ 多任务预测头。
+MOSI 主模型锁定为 text_audio conservative (T+A), P6K s42=88.72%, s2024=86.89%。Vision 退出 MOSI 主路径。MOSEI 主模型未锁定。Residual/delta 不声称为主要提升来源。
+
+### 0.5 Baseline-Lite 路线 (P6M)
+
+Baseline 路线固定为内部 baseline-lite 轻量复现。经典: TFN/LMF/MulT/MISA/SelfMM/MMIM-lite。2025: MLCL/DLF-lite。CASP 不入普通 baseline 主列(TTA)。DPDF-LQ/DashFusion/R3DG 暂不执行。原论文报告值标注 "Reported by original paper"。
 
 DEConv、Data2Vec-Audio、CME 是候选增强模块，必须通过真实数据实验裁决是否进入最终主模型。
 

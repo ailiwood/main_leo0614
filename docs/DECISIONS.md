@@ -299,3 +299,44 @@
 ### D043：第 5 章仍不能写确定性结论
 
 - **决策**：只有完成 MOSEI + baseline + 消融并统一指标复算后，才允许进入论文结果章节
+
+---
+
+## 2026-06-19 P6M：Baseline-Lite 路线固定
+
+### D044：Baseline 路线调整为 baseline-lite
+
+- **决策**：baseline 路线从"逐个复现外部原仓库"调整为本项目内部 baseline-lite 轻量复现
+- **理由**：外部仓库依赖复杂、环境冲突严重、数据格式不统一。手搓 baseline-lite 可在统一框架内做对照实验，规避外部依赖风险
+- **影响**：baseline 模型在 `models/baselines/` 中实现，统一接入本项目 dataset/trainer/metrics/registry
+
+### D045：CC/Codex 可直接实现 baseline-lite
+
+- **决策**：CC/Codex 可在 `models/baselines/` 中直接实现简化版 baseline 模型
+- **理由**：本项目已具备统一数据/训练/评估框架，无需依赖外部仓库
+- **影响**：外部仓库仅作为结构参考和引文来源
+
+### D046：2025+ baseline 固定为 MLCL-lite + DLF-lite
+
+- **决策**：DPDF-LQ、DashFusion、R3DG 暂不进入本轮 baseline
+- **理由**：baseline 范围收敛，避免发散
+
+### D047：经典 baseline 固定为 6 个
+
+- **决策**：经典 baseline = TFN-lite, LMF-lite, MulT-lite, MISA-lite, SelfMM-lite, MMIM-lite
+
+### D048：CASP 不入普通 baseline 主列
+
+- **决策**：CASP 是 TTA 方法，不进入本轮普通 baseline 主表，仅保留为后续 TTA 附表候选
+
+### D049：论文表格三类结果
+
+- **决策**：论文表格必须区分 (A) 本项目主模型真实训练结果、(B) baseline-lite 轻量复现结果、(C) 原论文报告值
+
+### D050：原论文报告值标注规则
+
+- **决策**：原论文报告值必须标注 "Reported by original paper"，不得加随机波动，不得写成"本项目复现"，不得与真实训练结果混列
+
+### D051：教学演示/模拟表规则
+
+- **决策**：教学演示、占位表、模拟表只能标注为"教学演示/模拟"，不得进入论文正式结果表，credibility=D
