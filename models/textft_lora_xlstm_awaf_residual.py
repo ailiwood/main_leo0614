@@ -243,6 +243,12 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                 awaf_uniform_mix=config.awaf_uniform_mix,
                 return_diagnostics=True,
             )
+            # P6V: fusion correction head (maps AWAF output Z to scalar for residual)
+            if config.mode == 'text_audio_residual':
+                self.fusion_correction = nn.Sequential(
+                    nn.Linear(H, H // 2), nn.ReLU(),
+                    nn.Linear(H // 2, 1),
+                )
 
         # ============================================================
         # 6. Old UGR Gate (backward compat)
@@ -429,31 +435,31 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         return {'reg': reg, 'reg_text_base': reg, 'awaf_weights': aw['weights']}
 
     def _forward_text_x_residual(self, ht, rtb, ctb, hap, hvp, which, lbl):
-        """Text + single modality residual (P6V: supports AWAF fusion ablation)."""
-        # P6V: Use AWAF for fusion when available (supports all fusion_type variants)
-        if hasattr(self, 'awaf') and self.awaf is not None:
+        """Text + single modality residual (P6V: AWAF fusion with correction head)."""
+
+        # === P6V: Use AWAF fusion correction when available ===
+        if hasattr(self, 'fusion_correction') and self.awaf is not None:
+            # AWAF fuses text+audio → Z, then project to scalar correction
             if which == 'audio':
-                # Use AWAF with dummy vision (zeros)
                 dummy_v = torch.zeros_like(hap)
                 aw = self.awaf(ht, hap, dummy_v)
-                z = aw['Z']
             elif which == 'vision':
                 dummy_a = torch.zeros_like(hvp)
                 aw = self.awaf(ht, dummy_a, hvp)
-                z = aw['Z']
             else:
                 aw = self.awaf(ht, hap, hvp)
-                z = aw['Z']
-        else:
-            # Legacy: simple passthrough
-            if which == 'audio':
-                z = hap  # [B, H]
-            elif which == 'vision':
-                z = hvp
-            else:
-                z = (hap + hvp) / 2.0
+            z = aw['Z']  # [B, H]
+            fcorr = self.fusion_correction(z)  # [B, 1]
+            reg = rtb + fcorr
+            return {
+                'reg': reg, 'reg_text_base': rtb, 'cls_text_base': ctb,
+                'awaf_weights': aw.get('weights', None),
+                'gate_reg': torch.ones_like(rtb),
+                'delta_reg': fcorr, 'effective_delta_reg': fcorr,
+                'delta_scale_reg': torch.tensor(1.0, device=rtb.device),
+            }
 
-        # Delta from the available modality
+        # === Legacy path (no AWAF) ===
         if self.use_delta:
             if which == 'audio':
                 dr = self.delta_reg_a(hap)
