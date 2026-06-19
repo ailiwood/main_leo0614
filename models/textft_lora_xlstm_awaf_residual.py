@@ -98,11 +98,11 @@ class TextFTLoRAConfig:
 
     @property
     def needs_audio_branch(self) -> bool:
-        return self.mode not in ('text_only', 'vision_only')
+        return self.mode not in ('text_only', 'vision_only', 'text_vision_residual')
 
     @property
     def needs_vision_branch(self) -> bool:
-        return self.mode not in ('text_only', 'audio_only')
+        return self.mode not in ('text_only', 'audio_only', 'text_audio_residual')
 
     @property
     def needs_awaf(self) -> bool:
@@ -303,10 +303,12 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
 
         # === Vision branch ===
         hvp = None
-        if self.config.needs_vision_branch:
-            v = batch['vision'].to(DEVICE)
-            vm_v = batch['vision_mask'].to(DEVICE)
-            hvp = self._compute_vision(v, vm_v)
+        if self.config.needs_vision_branch and mode != 'text_audio_residual':
+            v = batch.get('vision', torch.zeros(1, 1, 768, device=DEVICE))
+            vm_v = batch.get('vision_mask', torch.zeros(1, 1, device=DEVICE))
+            if v is not None and vm_v is not None and vm_v.sum() > 0:
+                v = v.to(DEVICE); vm_v = vm_v.to(DEVICE)
+                hvp = self._compute_vision(v, vm_v)
 
         # === Mode-specific forward ===
         if mode == 'text_only':
