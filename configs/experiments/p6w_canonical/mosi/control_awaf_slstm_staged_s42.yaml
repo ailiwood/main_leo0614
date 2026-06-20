@@ -1,0 +1,55 @@
+# P6W-C MOSI Attempt 2: Staged training (freeze text → unfreeze LoRA)
+phase: P6W_CANONICAL_ATTEMPT2
+ablation_protocol: P6W_Canonical_Attempt2
+dataset: mosi
+ablation_name: control_awaf_slstm_staged
+fusion_type: awaf
+temporal_encoder: slstm
+seed: 42
+notes: |
+  MOSI Canonical Attempt 2 — LAST attempt.
+  Stage A (epoch 1-4): freeze RoBERTa+LoRA, train audio/AWAF/head only
+  Stage B (epoch 5-20): unfreeze LoRA at 5e-7 LR, train all except RoBERTa
+  If this fails, MOSI Canonical is permanently blocked.
+data:
+  csv_path: data/mosi/label.csv
+  dataset: mosi
+  feature_root: data/features_strong_sequence_mosi_v3_T40
+  formal_mode: true
+model:
+  mode: canonical_text_audio_awaf_slstm
+  audio_dim: 768
+  hidden_dim: 256
+  slstm_num_layers: 1
+  slstm_dropout: 0.2
+  text_model_name: roberta-large
+  text_mlp_hidden: 512
+  text_dropout: 0.1
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_targets: ['query', 'value']
+  tau_init: 3.0
+  awaf_dropout: 0.1
+  use_modality_dropout: true
+  modality_dropout_prob: 0.1
+  use_modal_layernorm: true
+  freeze_text_base: true
+training:
+  batch_size: 4
+  grad_accum_steps: 16
+  epochs: 20
+  early_stopping_patience: 6
+  min_epochs: 5
+  lr: 3.0e-05
+  lr_text_lora: 3.0e-06
+  weight_decay: 0.03
+  seed: 42
+  test_final_once: true
+  # Attempt 2 staged protocol
+  staged_training: true
+  stage_a_epochs: 4
+  stage_b_lora_lr: 5.0e-07
+output:
+  exp_name: control_awaf_slstm_staged_s42
+  root: outputs/P6W_Canonical/mosi
