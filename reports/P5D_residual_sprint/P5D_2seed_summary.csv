@@ -1,6 +1,0 @@
-model,seed,ACC2_Non0_regsign,F1_Non0,ACC2_Has0,MAE,Corr,ACC7,ACC2_Non0_cls,confidence,note
-DeepMLP_text_only,42,80.2,,,0.885,0.733,,,B,P5B upper bound
-P4W_AWAFSeq,42,78.8,,,0.994,0.645,,,B,Old multimodal (worse than text-only)
-P5C_DeepTextXLSTMAWAFResidual,42,81.1,77.7,79.45,0.8155,0.7487,42.13,80.95,A,Seed42 60ep
-P5C_DeepTextXLSTMAWAFResidual,2024,81.4,78.06,79.45,0.7957,0.749,44.61,81.1,A,Seed2024 60ep
-2-SEED_MEAN,-,81.25,77.88,79.45,0.8056,0.7489,43.37,81.03,A,Stable: σ=0.15%

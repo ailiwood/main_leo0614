@@ -1,3 +1,0 @@
-model,dataset,modalities,seed,best_epoch,epochs_run,ACC2_Non0,F1_Non0,MAE,Corr,ACC7,params_M,text_backbone,credibility,notes
-selfmm_lite_rescue,mosi,text_audio,42,27,37,76.68,73.11,1.024,0.614,28.86,0.49,RoBERTa frozen,A,rescue success; +26.8pp vs P6O
-mult_lite_rescue,mosi,text_audio,42,pending,pending,,,,,,,RoBERTa frozen,,running

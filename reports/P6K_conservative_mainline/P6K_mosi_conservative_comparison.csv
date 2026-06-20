@@ -1,7 +1,0 @@
-model,seed,modalities,ACC2_Non0,F1_Non0,MAE,Corr,ACC7,is_text_dominant,uses_residual,residual_gain,notes
-P6H_inline_text_av,42,T+A+V,86.43,84.36,0.678,0.828,45.92,no,yes,0.00,inline script baseline
-P6I_text_only,42,T,83.99,82.29,0.839,0.779,41.69,yes,no,0.00,pure text-only class-based
-P6J_text_conf,42,T+A+V,85.06,83.67,0.805,0.824,38.48,no,yes,0.00,text_confidence residual harmful(net=-10)
-P6K_textbase_recovery,42,T+A+V,86.13,83.30,0.611,0.853,46.21,no,yes,0.00,regression fixed(class-based=P6H)
-P6K_text_audio_s42,42,T+A,88.72,86.64,0.635,0.851,46.65,yes,yes,0.00,conservative candidate seed42
-P6K_text_audio_s2024,2024,T+A,86.89,84.75,0.650,0.841,47.67,yes,yes,0.00,conservative candidate seed2024

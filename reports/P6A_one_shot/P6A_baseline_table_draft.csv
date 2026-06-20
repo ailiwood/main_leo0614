@@ -1,9 +1,0 @@
-group,model,dataset,ACC2_Non0,F1_Non0,MAE,Corr,ACC7,metric_protocol,source,is_reproduced,is_literature,is_directly_comparable,notes
-classic,TFN,MOSI,——,——,——,——,——,unknown,paper Zadeh 2017,no,yes,⚠️,Need verified values
-classic,LMF,MOSI,——,——,——,——,——,unknown,paper Liu 2018,no,yes,⚠️,Need verified values
-classic,MulT,MOSI,——,——,——,——,——,unknown,paper Tsai 2019,no,yes,⚠️,Need verified values
-classic,MISA,MOSI,——,——,——,——,——,unknown,paper Hazarika 2020,no,yes,⚠️,Need verified values
-classic,Self-MM,MOSI,——,——,——,——,——,unknown,paper Yu 2021,no,yes,⚠️,Need verified values
-2025,MLCL,MOSI,——,——,——,——,——,待核,paper Zhuang 2025 TMM,no,yes,⚠️,Need paper verification
-ours,P5E V2 (2-seed),MOSI,82.17,78.57,0.8299,0.7351,40.67,Non0 reg_sign,this project,yes,no,yes,Primary result
-tta,CASP (TTA),MOSI,——,——,——,——,——,unknown+TTA,paper Guo 2025 AAAI,no,yes,❌,Separate TTA table only

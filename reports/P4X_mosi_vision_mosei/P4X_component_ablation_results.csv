@@ -1,2 +1,0 @@
-name,sign_consistency,aux_loss,scheduler,best_epoch_by_val,ACC2_Non0_regsign,F1_Non0_regsign,MAE,Corr,ACC7,w_t_mean,w_a_mean,w_v_mean,awaf_entropy_mean,train_time_sec,status
-A_full,0.1,0.1,True,17,78.5060975609756,76.69421487603304,0.9853785985608317,0.6598946989664984,33.965014577259474,0.2675930857658386,0.0878937691450119,0.6445131301879883,0.8153692483901978,901.4588341712952,OK

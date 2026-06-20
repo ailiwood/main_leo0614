@@ -1,2 +1,0 @@
-name,modality,seed,epochs,best_epoch_by_val,ACC2_Non0_regsign,F1_Non0_regsign,MAE,Corr,ACC7,train_time_sec,status
-text_only,text,42,40,28,76.21951219512195,74.67532467532467,1.004339884667937,0.6559711739283778,31.924198250728864,267.09590578079224,OK
