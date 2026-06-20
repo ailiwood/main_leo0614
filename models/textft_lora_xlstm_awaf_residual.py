@@ -113,6 +113,9 @@ class TextFTLoRAConfig:
 
     @property
     def needs_awaf(self) -> bool:
+        # P6W-C: canonical mode always uses AWAF
+        if self.mode == 'canonical_text_audio_awaf_slstm':
+            return True
         # P6V: always create AWAF for multimodal modes (supports fusion_type ablation)
         return self.mode in ('text_av_residual', 'text_confidence_residual', 'av_only', 'text_audio_residual')
 
@@ -214,6 +217,22 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
 
         # ============================================================
         # 5. AWAF (supports all fusion_type variants via fusion_mode)
+        # ============================================================
+        # P6W-C: Canonical mode creates dedicated 2-modality AWAF-style fusion
+        self._is_canonical = (config.mode == 'canonical_text_audio_awaf_slstm')
+        if self._is_canonical:
+            self.canonical_fusion = AdaptiveWeightedAttentionFusion(
+                hidden_dim=H, fusion_mode='awaf',
+                tau_init=config.tau_init, dropout=config.awaf_dropout,
+                use_modality_dropout=config.use_modality_dropout,
+                modality_dropout_prob=config.modality_dropout_prob,
+                use_modal_layernorm=config.use_modal_layernorm,
+                return_diagnostics=True,
+            )
+            self.canonical_head = nn.Sequential(
+                nn.Linear(H, H // 2), nn.ReLU(),
+                nn.Linear(H // 2, 1),
+            )
         # ============================================================
         if config.needs_awaf:
             # P6V: map fusion_type to awaf_fusion_mode
@@ -389,7 +408,9 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                 hvp = self._compute_vision(v, vm_v)
 
         # === Mode-specific forward ===
-        if mode == 'text_only':
+        if mode == 'canonical_text_audio_awaf_slstm':
+            return self._forward_canonical_ta_awaf(ht, hap, lbl)
+        elif mode == 'text_only':
             return self._forward_text_only(ht, rtb, ctb, lbl)
         elif mode == 'audio_only':
             return self._forward_audio_only(hap, lbl)
@@ -411,6 +432,22 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
     # ================================================================
     # Mode-specific forward implementations
     # ================================================================
+    def _forward_canonical_ta_awaf(self, ht, hap, lbl):
+        """P6W-C Canonical: text+audio → AWAF → head. NO bypass, NO gate, NO delta."""
+        # AWAF expects 3 modalities; use text, audio, and a learned-near-zero vision
+        dummy_v = torch.zeros_like(hap)
+        aw = self.canonical_fusion(ht, hap, dummy_v)
+        z = aw['Z']                    # [B, H] fused representation
+        w = aw['weights']             # [B, 3] weights (w_v ≈ 0)
+        reg = self.canonical_head(z)  # [B, 1]
+        return {
+            'reg': reg,
+            'z_fused': z,
+            'awaf_weights': w,
+            'reg_text_base': reg,     # canonical: no separate text base
+            'cls_text_base': reg,     # canonical: single output
+        }
+
     def _forward_text_only(self, ht, rtb, ctb, lbl):
         return {
             'reg': rtb, 'cls': ctb,
