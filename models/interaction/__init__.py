@@ -1,1 +1,1 @@
-from models.interaction.cross_modal_transformer import CrossModalTransformerEncoder
+# Archived

@@ -1,2 +1,3 @@
-"""models/modules/ — P5D 子模块"""
-from models.modules.conditional_residual_gate import ConditionalResidualGate
+"""models/modules/ — sub-modules for main model"""
+# Active: minimal_lora, uncertainty_residual_gate, text_confidence_residual
+# conditional_residual_gate archived (superseded)
