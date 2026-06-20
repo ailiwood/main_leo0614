@@ -278,6 +278,7 @@ class SLSTMEncoder(nn.Module):
         for cell in cells:
             outputs = []
             state = None
+            h_prev_cp = c_prev_cp = n_prev_cp = m_prev_cp = None
 
             for t in range(T):
                 x_t = layer_input[:, t, :]  # [B, D]
@@ -299,7 +300,7 @@ class SLSTMEncoder(nn.Module):
                     # 对 padding 样本：h_t 置零
                     invalid_mask = ~is_valid  # [B]
 
-                    if invalid_mask.any() and state is not None:
+                    if invalid_mask.any() and state is not None and h_prev_cp is not None:
                         # 展开当前 state
                         h_new, c_new, n_new, m_new = state
                         h_prev_local, c_prev_local, n_prev_local, m_prev_local = (
