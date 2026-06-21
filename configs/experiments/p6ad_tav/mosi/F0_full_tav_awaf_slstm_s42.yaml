@@ -1,0 +1,53 @@
+phase: P6AD_TAV
+dataset: mosi
+data_version: mosi_tav_v1
+cohort_id: mosi_official_tav_complete_case_v1
+modalities: text_audio_vision
+seed: 42
+notes: "P6AD MOSI TAV Canonical main model - F0 control"
+data:
+  csv_path: data/mosi/label.csv
+  dataset: mosi
+  feature_root: data/processed/mosi_tav_v1
+  formal_mode: true
+model:
+  mode: canonical_text_audio_vision_awaf_slstm
+  audio_dim: 768
+  vision_dim: 1024
+  hidden_dim: 256
+  slstm_num_layers: 1
+  slstm_dropout: 0.2
+  slstm_bidirectional: false
+  text_model_name: roberta-large
+  text_mlp_hidden: 512
+  text_dropout: 0.1
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_targets:
+  - query
+  - value
+  fusion_type: awaf
+  awaf_context: true
+  awaf_interaction: true
+  temporal_encoder: slstm
+  tau_init: 3.0
+  awaf_dropout: 0.1
+  use_modality_dropout: true
+  modality_dropout_prob: 0.1
+  use_modal_layernorm: true
+  freeze_text_base: false
+training:
+  batch_size: 8
+  grad_accum_steps: 8
+  epochs: 4
+  early_stopping_patience: 0
+  min_epochs: 4
+  lr: 3.0e-05
+  lr_text_lora: 3.0e-06
+  weight_decay: 0.03
+  seed: 42
+  test_final_once: true
+output:
+  exp_name: F0_full_tav_awaf_slstm_s42
+  root: outputs/P6AD_tav/mosi

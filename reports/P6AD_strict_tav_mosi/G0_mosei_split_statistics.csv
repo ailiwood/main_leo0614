@@ -1,0 +1,4 @@
+split,n_valid,label_mean,label_std,label_pos_ratio,audio_frames_mean,vision_frames_mean
+train,13239,0.1064,1.1395,0.6964,100.0,44.4
+valid,1561,0.1717,1.0720,0.7194,100.0,44.5
+test,3771,0.1197,1.1318,0.7001,100.0,44.0

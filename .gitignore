@@ -1,102 +1,50 @@
-# Python cache
-__pycache__/
-*.py[cod]
-*.pyo
-*.pyd
-.pytest_cache/
-.mypy_cache/
-.ipynb_checkpoints/
-
-# Python / Conda / virtual env
-.venv/
-venv/
-env/
-ENV/
-conda/
-site-packages/
-
-# IDE / OS
-.vscode/
-.idea/
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# Logs and temporary outputs
-logs/
-log/
-runs/
-wandb/
-tensorboard/
-outputs/
-output/
-tmp/
-temp/
-*.log
-
-# Dataset FEATURE files (NOT code .py files)
+# Data / Cache
 data/raw/
-data/features*/
-data/features_strong_sequence_mosi/
-data/mosi/
-data/CMU-MOSEI/
-
-# Model checkpoints / weights
-checkpoints/
-checkpoint/
-weights/
-pretrained/
-model_weights/
-saved_models/
-*.pt
-*.pth
-*.ckpt
-*.bin
-*.safetensors
-*.onnx
+data/processed/
+data/cache/
+*.npz
+*.npy
+*.pkl
 *.h5
 *.hdf5
-*.csd
 
-# Large numerical/cache files
-*.npy
-*.npz
-*.pkl
-*.pickle
-*.joblib
-*.mat
+# Model weights / Training outputs
+outputs/
+artifacts/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.bin
 
-# Audio/video raw data
-*.wav
-*.mp3
-*.mp4
-*.avi
-*.mov
-*.mkv
-*.flac
+# Python / Runtime
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/
 
-# Compressed archives
-*.zip
-*.rar
-*.7z
-*.tar
-*.tar.gz
-*.gz
+# Logging / Monitoring
+wandb/
+runs/
+logs/
+*.log
 
-# HuggingFace cache
-hf_cache/
-.hf_cache/
+# Environment / Secrets
+.env
+.venv/
+venv/
+.env.local
 
-# Experiments
-experiments/
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
 
-# External third-party
-external/
-
-# Archives
-archives/
-
-# Office temporary files
-~$*.docx
-~$*.xlsx
-~$*.pptx
+# OS
+.DS_Store
+Thumbs.db

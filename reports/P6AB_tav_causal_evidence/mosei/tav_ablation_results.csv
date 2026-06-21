@@ -1,0 +1,8 @@
+variant,name,role,modalities,epochs,best_epoch,ACC2_Non0,F1_Non0,MAE,Corr,ACC7,trainable_M,w_t,w_a,w_v,config
+F0,Full TAV AWAF sLSTM,control,T+A+V,4,4,78.32,83.30,0.7345,0.5622,43.31,4.839181,0.4345,0.2633,0.3021,configs/experiments/p6ab_tav_ablation/mosei/F0_full_tav_awaf_slstm_s42.yaml
+F1,No Vision (T+A),vision_contribution,T+A,4,4,76.65,82.53,0.7421,0.5532,41.41,4.097036,0.3681,0.3009,0.3310,configs/experiments/p6ab_tav_ablation/mosei/F1_no_vision_text_audio_s42.yaml
+F2,No Audio (T+V),audio_contribution,T+V,4,4,78.72,82.94,0.7155,0.5819,42.62,4.26062,0.3406,0.3651,0.2943,configs/experiments/p6ab_tav_ablation/mosei/F2_no_audio_text_vision_s42.yaml
+F3,Global Static Weights,sample_level_awaf,T+A+V,4,4,79.30,83.70,0.7064,0.5972,43.40,3.587853,0.3333,0.3333,0.3333,configs/experiments/p6ab_tav_ablation/mosei/F3_global_static_tav_s42.yaml
+F4,Fixed Mean (1/3 each),dynamic_fusion,T+A+V,4,4,79.30,83.70,0.7064,0.5972,43.40,3.587847,0.3333,0.3333,0.3333,configs/experiments/p6ab_tav_ablation/mosei/F4_fixed_mean_tav_s42.yaml
+F5,AWAF No Interaction,hadamard_interaction,T+A+V,4,4,75.96,82.15,0.7489,0.5540,42.08,4.445965,0.3655,0.2547,0.3798,configs/experiments/p6ab_tav_ablation/mosei/F5_awaf_no_interaction_tav_s42.yaml
+E1,LSTM Temporal Encoder,slstm_contribution,T+A+V,4,4,77.78,81.86,0.7096,0.5891,43.64,4.972813,0.4823,0.2447,0.2730,configs/experiments/p6ab_tav_ablation/mosei/E1_temporal_lstm_all_s42.yaml

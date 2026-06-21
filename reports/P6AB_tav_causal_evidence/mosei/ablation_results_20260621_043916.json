@@ -1,0 +1,18 @@
+{
+  "start_time": "20260621_043916",
+  "results": {
+    "F2": "FAILED",
+    "F3": "SKIPPED",
+    "F4": "SKIPPED",
+    "F5": "SKIPPED",
+    "E1": "SKIPPED"
+  },
+  "python": "/e/Anaconda3/envs/mme_xlstm_stable/python.exe",
+  "run_order": [
+    "F2",
+    "F3",
+    "F4",
+    "F5",
+    "E1"
+  ]
+}

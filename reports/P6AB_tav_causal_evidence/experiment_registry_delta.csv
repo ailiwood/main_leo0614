@@ -1,0 +1,10 @@
+phase,experiment_id,dataset,modalities,mode,seed,epochs,cohort_id,data_version,status,ACC2_Non0,F1_Non0,MAE,Corr,ACC7,notes
+P6AB,F0_full_tav_awaf_slstm,MOSEI,text_audio_vision,canonical_tav_awaf_slstm,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,training,——,——,——,——,——,TAV control (4-epoch ablation)
+P6AB,F1_no_vision_text_audio,MOSEI,text_audio,canonical_ta_awaf_slstm,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,Vision contribution ablation
+P6AB,F2_no_audio_text_vision,MOSEI,text_vision,canonical_tv_awaf_slstm,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,Audio contribution ablation
+P6AB,F3_global_static_tav,MOSEI,text_audio_vision,canonical_tav_fixed,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,Sample-level AWAF contribution ablation
+P6AB,F4_fixed_mean_tav,MOSEI,text_audio_vision,canonical_tav_mean,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,Dynamic fusion contribution ablation
+P6AB,F5_awaf_no_interaction,MOSEI,text_audio_vision,canonical_tav_awaf_no_int,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,Hadamard interaction contribution ablation
+P6AB,E1_temporal_lstm_all,MOSEI,text_audio_vision,canonical_tav_lstm,42,4,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,queued,——,——,——,——,——,sLSTM vs LSTM contribution ablation
+P6AA,control_awaf_slstm_s42,MOSEI,text_audio_vision,canonical_tav_awaf_slstm,42,12,mosei_official_tav_intersection_v1,mosei_tav_openface2_v1,formal_complete,87.98,90.49,0.533,0.785,53.92,12-epoch canonical main candidate (P6AA)
+P6K,mosi_text_audio_conservative,MOSI,text_audio,text_audio_residual,2024,?,unknown,unknown,historical_text_audio_reference,88.72,86.64,——,——,——,Historical reference only — NOT TAV evidence

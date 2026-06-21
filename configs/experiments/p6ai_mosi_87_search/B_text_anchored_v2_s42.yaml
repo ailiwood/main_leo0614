@@ -1,0 +1,51 @@
+phase: P6AI_FAMILY_B
+dataset: mosi
+data_version: mosi_tav_v1
+cohort_id: mosi_official_tav_complete_case_v1
+modalities: text_audio_vision
+seed: 42
+notes: "P6AI Family B: Text-Anchored Reliable Fusion v2 - learnable gate bias + bounded alpha"
+data:
+  csv_path: data/mosi/label.csv
+  dataset: mosi
+  feature_root: data/processed/mosi_tav_v1
+  formal_mode: true
+model:
+  mode: canonical_mosi_text_anchored_tav
+  audio_dim: 768
+  vision_dim: 1024
+  hidden_dim: 256
+  slstm_num_layers: 1
+  slstm_dropout: 0.2
+  slstm_bidirectional: false
+  text_model_name: roberta-large
+  text_mlp_hidden: 512
+  text_dropout: 0.1
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_targets:
+  - query
+  - value
+  fusion_type: awaf
+  temporal_encoder: slstm
+  tau_init: 3.0
+  awaf_dropout: 0.1
+  use_modality_dropout: true
+  modality_dropout_prob: 0.1
+  use_modal_layernorm: true
+  freeze_text_base: false
+training:
+  batch_size: 8
+  grad_accum_steps: 8
+  epochs: 40
+  early_stopping_patience: 8
+  min_epochs: 10
+  lr: 1.0e-04
+  lr_text_lora: 2.0e-05
+  weight_decay: 0.01
+  seed: 42
+  test_final_once: true
+output:
+  exp_name: B_text_anchored_v2_s42
+  root: outputs/P6AI_mosi_87_search

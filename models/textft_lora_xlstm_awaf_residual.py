@@ -19,6 +19,7 @@ from .modules.minimal_lora import apply_lora_to_roberta, mark_only_lora_as_train
 from .encoders.slstm import SLSTMEncoder
 from .pooling.attention_pooling import MaskedAttentionPooling
 from .fusion.awaf import AdaptiveWeightedAttentionFusion
+from .fusion.text_anchored_reliable_fusion import TextAnchoredReliableFusion
 from .modules.uncertainty_residual_gate import UncertaintyGuidedResidualGate
 from .modules.text_confidence_residual import (
     TextConfidenceResidualHead,
@@ -105,18 +106,32 @@ class TextFTLoRAConfig:
 
     @property
     def needs_audio_branch(self) -> bool:
+        # P6AB: canonical_text_vision_awaf_slstm has NO audio branch
+        if self.mode == 'canonical_text_vision_awaf_slstm':
+            return False
+        # P6AG: text_anchored modes always need audio
+        if 'text_anchored' in self.mode:
+            return True
         return self.mode not in ('text_only', 'vision_only', 'text_vision_residual')
 
     @property
     def needs_vision_branch(self) -> bool:
+        # P6AB: canonical_text_audio_awaf_slstm uses dummy vision, no real vision branch needed
+        if self.mode == 'canonical_text_audio_awaf_slstm':
+            return False
+        # P6AG: text_anchored modes always need vision
+        if 'text_anchored' in self.mode:
+            return True
         return self.mode not in ('text_only', 'audio_only', 'text_audio_residual')
 
     @property
     def needs_awaf(self) -> bool:
-        # P6W-C: canonical mode always uses AWAF
-        if self.mode == 'canonical_text_audio_awaf_slstm':
+        # P6AG: text_anchored mode uses its own fusion, not AWAF
+        if 'text_anchored' in self.mode:
+            return False
+        if self.mode in ('canonical_text_audio_awaf_slstm', 'canonical_text_audio_vision_awaf_slstm',
+                         'canonical_text_vision_awaf_slstm'):
             return True
-        # P6V: always create AWAF for multimodal modes (supports fusion_type ablation)
         return self.mode in ('text_av_residual', 'text_confidence_residual', 'av_only', 'text_audio_residual')
 
     @property
@@ -174,11 +189,11 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                     bidirectional=config.slstm_bidirectional, pooling='masked_mean',
                 )
             elif self._temporal_encoder_type == 'gru':
-                self.audio_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=True)
-                self.audio_temporal_proj = nn.Linear(H * 2, H)
+                self.audio_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=False)
+                self.audio_temporal_proj = nn.Linear(H, H)
             elif self._temporal_encoder_type == 'lstm':
-                self.audio_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=True)
-                self.audio_temporal_proj = nn.Linear(H * 2, H)
+                self.audio_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=False)
+                self.audio_temporal_proj = nn.Linear(H, H)
             else:  # none
                 self.audio_temporal = None
             self.audio_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
@@ -197,11 +212,11 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                     bidirectional=config.slstm_bidirectional, pooling='masked_mean',
                 )
             elif self._temporal_encoder_type == 'gru':
-                self.vision_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=True)
-                self.vision_temporal_proj = nn.Linear(H * 2, H)
+                self.vision_temporal = nn.GRU(H, H, num_layers=1, batch_first=True, bidirectional=False)
+                self.vision_temporal_proj = nn.Linear(H, H)
             elif self._temporal_encoder_type == 'lstm':
-                self.vision_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=True)
-                self.vision_temporal_proj = nn.Linear(H * 2, H)
+                self.vision_temporal = nn.LSTM(H, H, num_layers=1, batch_first=True, bidirectional=False)
+                self.vision_temporal_proj = nn.Linear(H, H)
             else:
                 self.vision_temporal = None
             self.vision_pool = MaskedAttentionPooling(H, dropout=config.slstm_dropout)
@@ -219,10 +234,35 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
         # 5. AWAF (supports all fusion_type variants via fusion_mode)
         # ============================================================
         # P6W-C: Canonical mode creates dedicated 2-modality AWAF-style fusion
-        self._is_canonical = (config.mode == 'canonical_text_audio_awaf_slstm')
+        self._is_canonical = config.mode in ('canonical_text_audio_awaf_slstm', 'canonical_text_audio_vision_awaf_slstm',
+                                              'canonical_text_vision_awaf_slstm')
+        # P6AB: resolve fusion_mode from config (shared between canonical and residual paths)
+        ft = getattr(config, 'fusion_type', 'awaf')
+        if ft == 'awaf':
+            if not getattr(config, 'awaf_context', True):
+                fm = 'awaf_no_context'
+            elif not getattr(config, 'awaf_interaction', True):
+                fm = 'awaf_no_interaction'
+            else:
+                fm = 'awaf'
+        elif ft == 'awaf_no_context':
+            fm = 'awaf_no_context'
+        elif ft == 'awaf_no_interaction':
+            fm = 'awaf_no_interaction'
+        elif ft == 'mean':
+            fm = 'mean'
+        elif ft == 'concat':
+            fm = 'concat'
+        elif ft == 'gated':
+            fm = 'gated'
+        elif ft == 'fixed':
+            fm = 'fixed'
+        else:
+            fm = getattr(config, 'awaf_fusion_mode', 'awaf')
+
         if self._is_canonical:
             self.canonical_fusion = AdaptiveWeightedAttentionFusion(
-                hidden_dim=H, fusion_mode='awaf',
+                hidden_dim=H, fusion_mode=fm,
                 tau_init=config.tau_init, dropout=config.awaf_dropout,
                 use_modality_dropout=config.use_modality_dropout,
                 modality_dropout_prob=config.modality_dropout_prob,
@@ -233,26 +273,30 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                 nn.Linear(H, H // 2), nn.ReLU(),
                 nn.Linear(H // 2, 1),
             )
+
+        # P6AG: Text-Anchored Reliable Fusion (for MOSI small-dataset TAV)
+        self._is_text_anchored = 'text_anchored' in config.mode
+        if self._is_text_anchored:
+            # P6AK: resolve ablation flags from mode string
+            _no_audio_corr = 'no_audio_corr' in config.mode
+            _no_vision_corr = 'no_vision_corr' in config.mode
+            _no_gate = 'no_gate' in config.mode
+            _no_interaction = 'no_interaction' in config.mode
+            self.text_anchored_fusion = TextAnchoredReliableFusion(
+                hidden_dim=H,
+                correction_hidden_dim=128,
+                gate_hidden_dim=64,
+                dropout=config.awaf_dropout,
+                gate_init_bias=-2.0,
+                no_audio_correction=_no_audio_corr,
+                no_vision_correction=_no_vision_corr,
+                no_reliability_gate=_no_gate,
+                no_interaction=_no_interaction,
+            )
+
         # ============================================================
         if config.needs_awaf:
-            # P6V: map fusion_type to awaf_fusion_mode
-            ft = getattr(config, 'fusion_type', 'awaf')
-            if ft == 'awaf':
-                fm = 'awaf'
-            elif ft == 'awaf_no_context':
-                fm = 'awaf_no_context'
-            elif ft == 'awaf_no_interaction':
-                fm = 'awaf_no_interaction'
-            elif ft == 'mean':
-                fm = 'mean'
-            elif ft == 'concat':
-                fm = 'concat'
-            elif ft == 'gated':
-                fm = 'gated'
-            elif ft == 'fixed':
-                fm = 'fixed'
-            else:
-                fm = config.awaf_fusion_mode  # fallback to config
+            # P6AB: reuse fm resolved above (with awaf_context/awaf_interaction support)
             self.awaf = AdaptiveWeightedAttentionFusion(
                 hidden_dim=H, fusion_mode=fm,
                 tau_init=config.tau_init, dropout=config.awaf_dropout,
@@ -400,7 +444,7 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
 
         # === Vision branch ===
         hvp = None
-        if self.config.needs_vision_branch and mode != 'text_audio_residual':
+        if self.config.needs_vision_branch and mode != 'text_audio_residual' or mode in ('canonical_text_audio_vision_awaf_slstm', 'canonical_text_vision_awaf_slstm'):
             v = batch.get('vision', torch.zeros(1, 1, 768, device=DEVICE))
             vm_v = batch.get('vision_mask', torch.zeros(1, 1, device=DEVICE))
             if v is not None and vm_v is not None and vm_v.sum() > 0:
@@ -408,8 +452,12 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
                 hvp = self._compute_vision(v, vm_v)
 
         # === Mode-specific forward ===
-        if mode == 'canonical_text_audio_awaf_slstm':
+        if mode == 'canonical_text_audio_vision_awaf_slstm':
+            return self._forward_canonical_tav_awaf(ht, hap, hvp, lbl)
+        elif mode == 'canonical_text_audio_awaf_slstm':
             return self._forward_canonical_ta_awaf(ht, hap, lbl)
+        elif mode == 'canonical_text_vision_awaf_slstm':
+            return self._forward_canonical_tv_awaf(ht, hvp, lbl)
         elif mode == 'text_only':
             return self._forward_text_only(ht, rtb, ctb, lbl)
         elif mode == 'audio_only':
@@ -426,6 +474,8 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
             return self._forward_text_av_residual(ht, rtb, ctb, hap, hvp, lbl)
         elif mode == 'text_confidence_residual':
             return self._forward_text_conf_residual(ht, rtb, ctb, hap, hvp, lbl)
+        elif 'text_anchored' in mode:
+            return self._forward_mosi_text_anchored_tav(ht, hap, hvp, lbl)
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
@@ -434,18 +484,47 @@ class TextFTLoRAXLSTMAWAFResidual(nn.Module):
     # ================================================================
     def _forward_canonical_ta_awaf(self, ht, hap, lbl):
         """P6W-C Canonical: text+audio → AWAF → head. NO bypass, NO gate, NO delta."""
-        # AWAF expects 3 modalities; use text, audio, and a learned-near-zero vision
         dummy_v = torch.zeros_like(hap)
         aw = self.canonical_fusion(ht, hap, dummy_v)
-        z = aw['Z']                    # [B, H] fused representation
-        w = aw['weights']             # [B, 3] weights (w_v ≈ 0)
-        reg = self.canonical_head(z)  # [B, 1]
+        z = aw['Z']; w = aw['weights']
+        reg = self.canonical_head(z)
+        return {'reg': reg, 'z_fused': z, 'awaf_weights': w,
+                'reg_text_base': reg, 'cls_text_base': reg}
+
+    def _forward_canonical_tav_awaf(self, ht, hap, hvp, lbl):
+        """P6AA TAV Canonical: text+audio+vision → AWAF → head. NO bypass."""
+        aw = self.canonical_fusion(ht, hap, hvp)
+        z = aw['Z']; w = aw['weights']
+        reg = self.canonical_head(z)
+        return {'reg': reg, 'z_fused': z, 'awaf_weights': w,
+                'reg_text_base': reg, 'cls_text_base': reg}
+
+    def _forward_canonical_tv_awaf(self, ht, hvp, lbl):
+        """P6AB TV Canonical: text+vision → AWAF → head. Dummy audio, NO bypass."""
+        dummy_a = torch.zeros_like(hvp)
+        aw = self.canonical_fusion(ht, dummy_a, hvp)
+        z = aw['Z']; w = aw['weights']
+        reg = self.canonical_head(z)
+        return {'reg': reg, 'z_fused': z, 'awaf_weights': w,
+                'reg_text_base': reg, 'cls_text_base': reg}
+
+    def _forward_mosi_text_anchored_tav(self, ht, hap, hvp, lbl):
+        """P6AG MOSI Text-Anchored TAV: text anchor + reliability-gated audio/vision corrections."""
+        # Handle None for counterfactual/testing
+        if hap is None:
+            hap = torch.zeros_like(ht)
+        if hvp is None:
+            hvp = torch.zeros_like(ht)
+        out = self.text_anchored_fusion(ht, hap, hvp)
         return {
-            'reg': reg,
-            'z_fused': z,
-            'awaf_weights': w,
-            'reg_text_base': reg,     # canonical: no separate text base
-            'cls_text_base': reg,     # canonical: single output
+            'reg': out['y_hat'],
+            'reg_text_base': out['y_text'],
+            'cls_text_base': out['y_text'],
+            'y_text': out['y_text'],
+            'delta_a': out['delta_a'],
+            'delta_v': out['delta_v'],
+            'r_a': out['r_a'],
+            'r_v': out['r_v'],
         }
 
     def _forward_text_only(self, ht, rtb, ctb, lbl):

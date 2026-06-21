@@ -1,98 +1,102 @@
-# MME: Multimodal Sentiment Analysis with AWAF+sLSTM
+# Multimodal Sentiment Analysis — Canonical TAV + Text-Anchored Reliable Fusion
 
-**Status**: Architecture frozen, MOSEI Canonical ablation in progress  
-**Branch**: `p6w-canonical-ta-awaf-slstm`  
-**Last Commit**: `7d08ab4`
+**Final Release**: p6am-final-freeze (2026-06-21)
 
 ## Overview
 
-Research code for multimodal sentiment analysis on CMU-MOSI and CMU-MOSEI datasets.  
-Core innovation: **Adaptive Weighted Attention Fusion (AWAF)** + **sLSTM temporal encoder** for text-audio fusion.
+This repository contains the code, configurations, and experiment documentation for multimodal sentiment analysis on CMU-MOSEI and CMU-MOSI datasets. Two fusion architectures are implemented:
 
-## Model
+| Dataset | Architecture | ACC2 | Status |
+|---------|-------------|------|--------|
+| MOSEI | Canonical AWAF sLSTM | 87.98% | Primary 3-modal evidence |
+| MOSI | Text-Anchored Reliable Fusion | 87.80% (3-seed mean) | Final TAV candidate |
 
-### Canonical Text-Audio AWAF+sLSTM (`canonical_text_audio_awaf_slstm`)
+## Directory Structure
 
 ```
-Text [B,128]  → RoBERTa+LoRA → MLP → h_t [B,256]  ┐
-                                                      ├→ AWAF → Head → y_hat
-Audio [B,100,74] → Proj → sLSTM → Pool → h_a [B,256] ┘   + [w_t, w_a]
+├── configs/          # Experiment configurations
+│   ├── final/        # Frozen final configs (to be organized)
+│   ├── baselines/    # Baseline-lite configs
+│   └── references/   # Historical reference configs
+├── data/             # Data loading and dataset code
+├── docs/             # Architecture, results, reproducibility docs
+├── env/              # Environment setup
+├── models/           # Model components
+│   ├── fusion/       # AWAF + Text-Anchored Reliable Fusion
+│   ├── encoders/     # sLSTM, pooling
+│   ├── baselines/    # Baseline model implementations
+│   └── modules/      # LoRA, gates
+├── reports/          # Experiment reports and results
+│   └── final/        # Final frozen reports, tables, figures
+├── scripts/          # Training and evaluation scripts
+├── utils/            # Metrics and utilities
+└── tests/            # Test scripts
 ```
 
-- **Text**: RoBERTa-large + LoRA (r=16, 1.6M trainable)
-- **Audio**: COVAREP 74d → projection → 1-layer sLSTM → masked attention pooling
-- **Fusion**: AWAF with cross-modal context + Hadamard interaction scoring
-- **Head**: Linear(256→128)→ReLU→Linear(128→1)
-- **Output**: Sentiment score [-3, +3] + per-sample modality weights [w_t, w_a]
-- **Params**: 357M total, 3.5M trainable
+## Installation
 
-### Architecture Documents
-- `docs/MODEL_ARCHITECTURE_SPEC.md` — Full component specification with code references
-- `docs/MODEL_ARCHITECTURE_CANONICAL.md` — Paper-oriented description with formulas
-- `docs/MODEL_ARCHITECTURE_DIAGRAM.mmd` — Mermaid flowchart
-- `docs/MODEL_TRUTH_SOURCES.md` — Final model classification
+```bash
+conda env create -f env/environment_mme_xlstm_stable.yml
+conda activate mme_xlstm_stable
+```
 
-## Baselines
+Requirements: Python 3.10, PyTorch 2.11+ with CUDA 12.8, RTX 5070 Ti or compatible GPU.
 
-7 baseline-lite reimplementations (not official):
-TFN, LMF, MulT, Self-MM, MISA, MLCL, DLF  
-MMIM-lite excluded (byte-identical to MISA-lite).
+## Data Preparation
+
+Data is NOT included in this repository. Download CMU-MOSEI and CMU-MOSI from official sources.
+
+Feature extraction uses:
+- MOSEI: COVAREP (audio) + OpenFace2 (vision)
+- MOSI: data2vec (audio) + CLIP-L14 (vision)
+
+See `data/README_data.md` for details.
+
+## Training
+
+### MOSI (Text-Anchored Reliable Fusion)
+```bash
+python scripts/train_textft_lora_mainline.py \
+  --config configs/experiments/p6aj_mosi_87_recovery/P1_p6k_init_tav_s42.yaml \
+  --init_checkpoint outputs/P6K/text_audio_conservative_s42_s42_20260619_031645/best_model.pth
+```
+
+### MOSEI (Canonical AWAF sLSTM)
+```bash
+python scripts/train_textft_lora_mainline.py \
+  --config configs/experiments/p6aa_tav/mosei/control_awaf_slstm_s42.yaml
+```
 
 ## Results
 
-### MOSEI (text_audio, seed=42)
-| Model | ACC2_Non0 | F1_Non0 | MAE | Corr |
-|-------|-----------|---------|-----|------|
-| **Canonical AWAF+sLSTM** | **87.83%** | 90.28% | 0.526 | 0.794 |
-| MISA-lite (best baseline) | 82.67% | 86.62% | 0.621 | 0.687 |
+See `docs/FINAL_RESULTS_LEDGER.md` for complete results.
 
-*Fair ablation (fusion/encoder variants) in progress.*
+### MOSI (3-seed mean)
+- ACC2_Non0: 87.80% ± 0.33
+- F1_Non0: 85.52%
+- Corr: 0.835
 
-### MOSI (text_audio, seed=42)
-| Model | ACC2_Non0 | F1_Non0 |
-|-------|-----------|---------|
-| P6K Conservative Reference | 88.72% | 86.64% |
+### MOSEI (seed 42)
+- ACC2_Non0: 87.98%
+- F1_Non0: 90.49%
+- Corr: 0.785
 
-*Note: P6K 88.72% uses text-audio co-training without AWAF. Canonical AWAF+sLSTM blocked on MOSI (insufficient training samples).*
+## Reproducibility
 
-## Quick Start
+See `docs/REPRODUCIBILITY.md` for:
+- Exact environment (conda env export)
+- Feature versions and sources
+- Training protocol
+- Known limitations
 
-```bash
-# Environment
-conda env create -f env/environment_mme_canonical.yml
-conda activate mme
+## Baseline Note
 
-# Verify imports
-python -c "from models.textft_lora_xlstm_awaf_residual import TextFTLoRAXLSTMAWAFResidual; print('OK')"
+Baseline implementations (TFN, LMF, MulT, SelfMM, MISA, MLCL, DLF) are `lite_reimplementations` — NOT official reproductions. They are provided for controlled comparison under identical data and training conditions.
 
-# Smoke test (1 epoch, 5 batches)
-python scripts/train_textft_lora_mainline.py \
-  --config configs/experiments/p6w_canonical/mosei/control_awaf_slstm_s42.yaml \
-  --device cuda --smoke
+## Model Weights and Data
 
-# Unit tests
-python tests/test_metrics_mosei_non0.py
-```
-
-## Data
-
-CMU-MOSI and CMU-MOSEI datasets are NOT included.  
-Feature paths in configs assume local preprocessed data.  
-See `docs/DATA_AND_FEATURE_SPEC.md` for expected structure.
-
-## Environment
-
-- Python 3.9, PyTorch 2.3.0+cu118, CUDA 11.8
-- `env/environment_mme_canonical.yml` — Conda environment
-- `env/requirements_mme_canonical.txt` — pip freeze
-
-## Disclaimer
-
-- Baseline-lite are lightweight reimplementations, NOT official
-- No data, weights, or checkpoints are uploaded
-- MOSEI audio (COVAREP 74d) has limited discriminative value
-- MOSI Canonical training is blocked (1284 samples insufficient)
+Model checkpoints, raw data, and processed features are NOT included in this repository. They are preserved locally. Contact the authors for access.
 
 ## License
 
-Research code. License TBD.
+This project is for academic research purposes. See individual component licenses for third-party code.

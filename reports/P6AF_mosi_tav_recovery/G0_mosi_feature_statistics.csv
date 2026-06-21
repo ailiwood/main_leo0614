@@ -1,0 +1,3 @@
+modality,feature_name,feature_dim,seq_len_min,seq_len_median,seq_len_max,valid_mask_ratio,zero_ratio,nan_ratio,inf_ratio,temporal_variance,feature_version
+audio,audio,768,11,100,100,1.000,0.000,0.000,0.000,0.028853,data2vec_768d
+vision,vision,1024,32,32,32,1.000,0.000,0.000,0.000,1.001799,CLIP-L14_1024d

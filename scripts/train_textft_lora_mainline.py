@@ -36,6 +36,7 @@ def parse_args():
     p.add_argument('--max_epochs', type=int, default=0, help='Override epochs (0=use config)')
     p.add_argument('--limit_batches', type=int, default=0, help='Limit train/val batches (0=use all)')
     p.add_argument('--smoke', action='store_true', help='Smoke test: 1 epoch, 5 batches')
+    p.add_argument('--init_checkpoint', type=str, default='', help='Path to checkpoint for weight initialization (P6K compatible)')
     return p.parse_args()
 
 
@@ -89,6 +90,12 @@ def build_config(yc, device='cuda'):
         tcr_gate_floor=m.get('tcr_gate_floor', 0.2),
         tcr_detach_text_for_residual=m.get('tcr_detach_text_for_residual', True),
         delta_loss_weight=m.get('delta_loss_weight', 1.0),
+        # --- P6AB: ablation-critical fields ---
+        fusion_type=m.get('fusion_type', 'awaf'),
+        awaf_context=m.get('awaf_context', True),
+        awaf_interaction=m.get('awaf_interaction', True),
+        temporal_encoder=m.get('temporal_encoder', 'slstm'),
+        slstm_bidirectional=m.get('slstm_bidirectional', False),
         # --- Device ---
         device=device,
     )
@@ -346,6 +353,22 @@ def main():
     model = TextFTLoRAXLSTMAWAFResidual(config)
     model = model.to(DEVICE)
     print(f'  Params: {model.count_trainable()}')
+
+    # P6AJ: Load initialization checkpoint (e.g., P6K weights)
+    if args.init_checkpoint:
+        print(f'[INIT] Loading checkpoint: {args.init_checkpoint}')
+        init_sd = torch.load(args.init_checkpoint, map_location=DEVICE)
+        model_sd = model.state_dict()
+        loaded = 0
+        skipped_shape = 0
+        for k, v in init_sd.items():
+            if k in model_sd and model_sd[k].shape == v.shape:
+                model_sd[k].copy_(v)
+                loaded += 1
+            elif k in model_sd:
+                skipped_shape += 1
+        model.load_state_dict(model_sd)
+        print(f'  Loaded {loaded} params, skipped {skipped_shape} (shape mismatch)')
 
     tokenizer = AutoTokenizer.from_pretrained(config.text_model_name)
 
@@ -658,17 +681,19 @@ def main():
     rp_np = rp.numpy().flatten()
     tg_np = tg.numpy().flatten()
 
-    if rb_np is not None and aw_np is not None:
+    if rb_np is not None:
+        # P6AG: save predictions even without AWAF weights (text_anchored mode)
+        _aw_np = aw_np if aw_np is not None else np.zeros((len(tg_np), 3))
         save_predictions_csv(
             os.path.join(out_dir, 'predictions_test.csv'),
             sample_ids, tg_np, rb_np, rp_np,
             ed_np if ed_np is not None else np.zeros_like(rp_np),
             gv_np if gv_np is not None else np.zeros_like(rp_np),
-            aw_np,
+            _aw_np,
         )
         save_group_error_csv(
             os.path.join(out_dir, 'group_error_analysis.csv'),
-            sample_ids, tg_np, rb_np, rp_np, aw_np,
+            sample_ids, tg_np, rb_np, rp_np, _aw_np,
         )
 
     if aw_np is not None:

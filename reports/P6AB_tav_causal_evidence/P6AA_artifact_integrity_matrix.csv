@@ -1,0 +1,36 @@
+artifact,type,status,path,notes
+TAV_main_config,config,formal_complete,configs/experiments/p6aa_tav/mosei/control_awaf_slstm_s42.yaml,12 epochs s42 TAV canonical
+TAV_main_best_model,model,formal_complete,outputs/P6AA_tav/mosei/main/.../best_model.pth,1.4GB epoch 11
+TAV_main_result,metrics,formal_complete,outputs/P6AA_tav/mosei/main/.../result.json,ACC2=87.98% F1=90.49%
+TAV_main_predictions,output,formal_complete,outputs/P6AA_tav/mosei/main/.../predictions_test.csv,4221 samples
+TAV_main_awaf_weights,output,formal_complete,outputs/P6AA_tav/mosei/main/.../awaf_weights_test.csv,Per-sample 3-modal weights
+TAV_main_metrics_csv,metrics,formal_complete,outputs/P6AA_tav/mosei/main/.../metrics_epoch.csv,12 epochs tracked
+TAV_main_group_error,analysis,formal_complete,outputs/P6AA_tav/mosei/main/.../group_error_analysis.csv,5 sentiment groups
+TAV_main_plots,visualization,formal_complete,outputs/P6AA_tav/mosei/main/.../*.png,6 plots saved
+TAV_main_command,metadata,missing_artifact,,command.txt not saved
+TAV_main_signature,metadata,missing_artifact,,model_signature.json not saved
+TAV_main_gradient,audit,missing_artifact,,gradient_audit.json not saved
+TAV_main_config_sha256,metadata,missing_artifact,,Config hash not computed
+DLF_lite_config,config,missing_artifact,configs/baselines/mosei/dlf_lite_s42.yaml,Modified but not trained
+LMF_lite_config,config,missing_artifact,configs/baselines/mosei/lmf_lite_s42.yaml,Modified but not trained
+MISA_lite_config,config,missing_artifact,configs/baselines/mosei/misa_lite_s42.yaml,Modified but not trained
+MLCL_lite_config,config,missing_artifact,configs/baselines/mosei/mlcl_lite_s42.yaml,Modified but not trained
+MULT_lite_config,config,missing_artifact,configs/baselines/mosei/mult_lite_s42.yaml,Modified but not trained
+SelfMM_lite_config,config,missing_artifact,configs/baselines/mosei/selfmm_lite_s42.yaml,Modified but not trained
+TFN_lite_config,config,missing_artifact,configs/baselines/mosei/tfn_lite_s42.yaml,Modified but not trained
+P6AA_final_report,report,missing_artifact,reports/P6AA_mosei_vision_recovery/P6AA_final_report.md,Not generated
+A0_source_audit,report,missing_artifact,reports/P6AA_mosei_vision_recovery/A0_mosei_openface2_source_audit.md,Not generated
+A1_feature_build,report,missing_artifact,reports/P6AA_mosei_vision_recovery/A1_tav_feature_build_report.md,Not generated
+A2_quality_gate,report,missing_artifact,reports/P6AA_mosei_vision_recovery/A2_tav_dataset_quality_gate.md,Not generated
+G1_static,report,missing_artifact,reports/P6AA_mosei_vision_recovery/G1_TAV_static.md,Not generated
+G2_dynamic,report,missing_artifact,reports/P6AA_mosei_vision_recovery/G2_TAV_dynamic.md,Not generated
+G3_overfit,report,missing_artifact,reports/P6AA_mosei_vision_recovery/G3_TAV_overfit200.md,Not generated
+health_check,report,missing_artifact,reports/P6AA_mosei_vision_recovery/TAV_main_health_check.md,Not generated
+baseline_audit,report,missing_artifact,reports/P6AA_mosei_vision_recovery/tav_baseline_consumption_audit.md,Not generated
+experiment_registry,registry,missing_artifact,reports/experiment_registry.csv,Not created
+P6S_text_only,historical_reference,historical_text_audio_reference,outputs/P6S_repair/mosei/text_only/...,ACC2=88.22% different cohort
+P6T_TA_mainline,historical_reference,historical_text_audio_reference,outputs/P6T_prefreeze/mosei/mainline/...,ACC2=87.86% different cohort
+P6Z_F0_TA_awaf,historical_reference,historical_text_audio_reference,outputs/P6Z_fast_causal_ablation/mosei/F0_full_awaf/...,ACC2=63.15% 4-epoch budget
+TAV_data_train,data,formal_complete,data/processed/mosei_tav_openface2_v1/train/,14700 samples
+TAV_data_valid,data,formal_complete,data/processed/mosei_tav_openface2_v1/valid/,1759 samples
+TAV_data_test,data,formal_complete,data/processed/mosei_tav_openface2_v1/test/,4221 samples 6.8% all-zero vision

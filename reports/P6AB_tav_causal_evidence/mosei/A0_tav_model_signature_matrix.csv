@@ -1,0 +1,8 @@
+variant,mode,total_params,trainable_params,has_audio_proj,has_audio_temporal,has_audio_pool,has_vision_proj,has_vision_temporal,has_vision_pool,fusion_mode,use_context,use_interaction,temporal_encoder_type,is_canonical
+F0,canonical_text_audio_vision_awaf_slstm,360198925,4839181,True,True,True,True,True,True,awaf,True,True,slstm,True
+F1,canonical_text_audio_awaf_slstm,359456780,4097036,True,True,True,False,False,False,awaf,True,True,slstm,True
+F2,canonical_text_vision_awaf_slstm,359620364,4260620,False,False,False,True,True,True,awaf,True,True,slstm,True
+F3,canonical_text_audio_vision_awaf_slstm,358947597,3587853,True,True,True,True,True,True,fixed,False,False,slstm,True
+F4,canonical_text_audio_vision_awaf_slstm,358947591,3587847,True,True,True,True,True,True,mean,False,False,slstm,True
+F5,canonical_text_audio_vision_awaf_slstm,359805709,4445965,True,True,True,True,True,True,awaf_no_interaction,True,False,slstm,True
+E1,canonical_text_audio_vision_awaf_slstm,360332557,4972813,True,True,True,True,True,True,awaf,True,True,lstm,True

@@ -1,0 +1,3 @@
+modality,feature_dim,seq_len_min,seq_len_median,seq_len_max,seq_len_mean,temporal_var_median,temporal_var_max,t1_fraction,t_lt4_fraction,route,feature_version
+audio,768,11,100,100,94.4,0.028853,0.104738,0.000,0.000,Route-S,data2vec_768d
+vision,1024,32,32,32,32.0,1.001799,1.124651,0.000,0.000,Route-S,CLIP-L14_1024d

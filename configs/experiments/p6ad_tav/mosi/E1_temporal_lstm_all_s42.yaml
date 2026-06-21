@@ -1,0 +1,54 @@
+ablation_name: E1_temporal_lstm_all
+data:
+  cohort_id: mosi_official_tav_complete_case_v1
+  csv_path: data/mosi/label.csv
+  data_version: mosi_tav_v1
+  dataset: mosi
+  feature_root: data/processed/mosi_tav_v1
+  formal_mode: true
+  modalities: text_audio_vision
+dataset: mosi
+model:
+  audio_dim: 768
+  awaf_context: true
+  awaf_dropout: 0.1
+  awaf_interaction: true
+  freeze_text_base: false
+  fusion_type: awaf
+  hidden_dim: 256
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_r: 16
+  lora_targets:
+  - query
+  - value
+  modality_dropout_prob: 0.1
+  mode: canonical_text_audio_vision_awaf_slstm
+  slstm_bidirectional: false
+  slstm_dropout: 0.2
+  slstm_num_layers: 1
+  tau_init: 3.0
+  temporal_encoder: lstm
+  text_dropout: 0.1
+  text_mlp_hidden: 512
+  text_model_name: roberta-large
+  use_modal_layernorm: true
+  use_modality_dropout: true
+  vision_dim: 1024
+notes: 'P6AD MOSI TAV ablation E1: LSTM instead of sLSTM'
+output:
+  exp_name: E1_temporal_lstm_all_s42
+  root: outputs/P6AD_tav/mosi
+phase: P6AD_TAV
+seed: 42
+training:
+  batch_size: 8
+  early_stopping_patience: 0
+  epochs: 4
+  grad_accum_steps: 8
+  lr: 3.0e-05
+  lr_text_lora: 3.0e-06
+  min_epochs: 4
+  seed: 42
+  test_final_once: true
+  weight_decay: 0.03

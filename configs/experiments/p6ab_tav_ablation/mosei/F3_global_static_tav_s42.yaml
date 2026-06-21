@@ -1,0 +1,56 @@
+phase: P6AB_TAV
+dataset: mosei
+ablation_name: F3_global_static_tav
+fusion_type: fixed
+temporal_encoder: slstm
+seed: 42
+notes: "P6AB MOSEI TAV ablation F3: global static learnable weights (no sample-level AWAF)"
+data:
+  csv_path: data/processed/mosei_full/label.csv
+  dataset: mosei
+  feature_root: data/processed/mosei_tav_openface2_v1
+  formal_mode: true
+  data_version: mosei_tav_openface2_v1
+  cohort_id: mosei_official_tav_intersection_v1
+  modalities: text_audio_vision
+model:
+  mode: canonical_text_audio_vision_awaf_slstm
+  audio_dim: 74
+  vision_dim: 713
+  hidden_dim: 256
+  slstm_num_layers: 1
+  slstm_dropout: 0.2
+  slstm_bidirectional: false
+  text_model_name: roberta-large
+  text_mlp_hidden: 512
+  text_dropout: 0.1
+  lora_r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  lora_targets:
+  - query
+  - value
+  fusion_type: fixed
+  awaf_context: false
+  awaf_interaction: false
+  temporal_encoder: slstm
+  tau_init: 3.0
+  awaf_dropout: 0.1
+  use_modality_dropout: true
+  modality_dropout_prob: 0.1
+  use_modal_layernorm: true
+  freeze_text_base: false
+training:
+  batch_size: 8
+  grad_accum_steps: 8
+  epochs: 4
+  early_stopping_patience: 0
+  min_epochs: 4
+  lr: 3.0e-05
+  lr_text_lora: 3.0e-06
+  weight_decay: 0.03
+  seed: 42
+  test_final_once: true
+output:
+  exp_name: F3_global_static_tav_s42
+  root: outputs/P6AB_tav_ablation/mosei
